@@ -1,0 +1,29 @@
+vivado/
+
+# Project files (re-creatable)
+*.xpr
+# Automatically generated directories
+.Xil/
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+*.gen/
+*.srcs/sources_1/bd/*/hdl/
+*.srcs/sources_1/bd/*/synth/
+# Log & report
+*.log
+*.jou
+*.str
+*.rpt
+# Synthesis & implementation intermediate files
+*.dcp
+*.bit
+*.ltx
+*.xsa
+# Simulation related
+*.wdb
+*.wcfg
+# Temp files
+.nfs*
