@@ -99,6 +99,21 @@ void dma_send(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     while (!(REG_READ(base + MM2S_DMASR) & 0x02));
 }
 
+// DMA Transfer (S2MM: Stream to Memory / Receive)
+void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
+    volatile uint8_t *base = (volatile uint8_t *)dma_base;
+    // Run/Stop bit = 1
+    uint32_t cr = REG_READ(base + S2MM_DMACR);
+    REG_WRITE(base + S2MM_DMACR, cr | 1);
+    // Set Destination Address
+    REG_WRITE(base + S2MM_DA, phys_addr);
+    REG_WRITE(base + S2MM_DA_MSB, 0); // 32bit addressing
+    // Set Length (starts transfer)
+    REG_WRITE(base + S2MM_LENGTH, length_bytes);
+    // Wait for Idle (bit 1)
+    while (!(REG_READ(base + S2MM_DMASR) & 0x02));
+}
+
 // =============================================================
 // Application logic
 // =============================================================
@@ -127,7 +142,40 @@ void write_cmd(uint32_t row) {
     dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
 }
 
-int main() {
+void read_cmd(uint32_t row) {
+    uint32_t stages;
+    // Precharge
+    stages = 3;
+    bram_vptr[0] = 1 | (stages << 24);
+    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
+    // Activate
+    stages = 3;
+    bram_vptr[0] = 2 | (row << 7) | (stages << 24);
+    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
+    // Read
+    stages = 3;
+    bram_vptr[0] = 3 | (stages << 24);
+    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
+    // Receive Data
+    dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t));
+    // Print Data
+    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+    for (int i = 0; i < 16; i++) {
+        printf("%08x ", ptr[i]);
+        if (i % 8 == 7) {
+            printf("\n");
+        }
+    }
+    printf("\n");
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        printf("Usage: %s <data>\n", argv[0]);
+        return -1;
+    }
+    uint8_t data = strtol(argv[1], NULL, 16);
+
     if (setup_hardware() != 0) return -1;
     printf("Hardware mapped successfully.\n");
 
@@ -135,8 +183,9 @@ int main() {
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    set_write_data(0x19);
+    set_write_data(data);
     write_cmd(0);
+    read_cmd(0);
 
     clock_gettime(CLOCK_MONOTONIC, &end);
     double latency_s = (end.tv_sec - start.tv_sec) + 
