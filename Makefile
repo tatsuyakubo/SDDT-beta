@@ -11,6 +11,10 @@ copy_vivado_outputs:
 	cp vivado/vivado.runs/impl_1/top.bit ./build/top_$$(date +%m%d).bit
 	cp vivado/vivado.gen/sources_1/bd/design_1/hw_handoff/design_1.hwh ./build/top_$$(date +%m%d).hwh
 
+build_kernel_module:
+	make -C src/kernel_module wc_driver
+
 clean:
-	rm *.jou
-	rm *.log
+	rm -rf ./build
+	rm -f *.jou
+	rm -f *.log
