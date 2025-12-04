@@ -7,13 +7,13 @@ BIN_DIR := $(abspath $(PWD)/../../bin)
 
 all: $(BIN_DIR)/test
 
-test.o: test.c
-	$(CC) $(CFLAGS) -c -o $@ test.c
+# test.o: test.c
+# 	$(CC) $(CFLAGS) -c -o $@ test.c
 
-api.o: api.c api.h
-	$(CC) $(CFLAGS) -c -o $@ api.c
+# api.o: api.c api.h
+# 	$(CC) $(CFLAGS) -c -o $@ api.c
 
-$(BIN_DIR)/test: test.o api.o
+$(BIN_DIR)/test: test.o utils.o api.o
 	mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
