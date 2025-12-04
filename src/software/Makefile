@@ -3,9 +3,20 @@ CFLAGS := -Wall -O3
 LDFLAGS :=
 
 PWD  := $(shell pwd)
-BUILD_DIR := $(abspath $(PWD)/../../build)
+BIN_DIR := $(abspath $(PWD)/../../bin)
 
-test: test.c
-	@mkdir -p $(BUILD_DIR)
-	@cp -f $(PWD)/test.c $(BUILD_DIR)/
-	@$(CC) $(CFLAGS) -o $(BUILD_DIR)/test $(BUILD_DIR)/test.c $(LDFLAGS)
+all: $(BIN_DIR)/test
+
+test.o: test.c
+	$(CC) $(CFLAGS) -c -o $@ test.c
+
+api.o: api.c api.h
+	$(CC) $(CFLAGS) -c -o $@ api.c
+
+$(BIN_DIR)/test: test.o api.o
+	mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+clean:
+	rm -f $(BIN_DIR)/test
+	rm -f $(PWD)/*.o
