@@ -5,15 +5,13 @@ LDFLAGS :=
 PWD  := $(shell pwd)
 BIN_DIR := $(abspath $(PWD)/../../bin)
 
-all: $(BIN_DIR)/test
+all: $(BIN_DIR)/tiny_test $(BIN_DIR)/small_test
 
-# test.o: test.c
-# 	$(CC) $(CFLAGS) -c -o $@ test.c
+$(BIN_DIR)/tiny_test: tiny_test.o utils.o api.o
+	mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-# api.o: api.c api.h
-# 	$(CC) $(CFLAGS) -c -o $@ api.c
-
-$(BIN_DIR)/test: test.o utils.o api.o
+$(BIN_DIR)/small_test: small_test.o utils.o api.o
 	mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 

@@ -147,7 +147,7 @@ uint32_t act(uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr, uint32_t i
 }
 
 // Read Command
-uint32_t rd(uint8_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t interval, bool strict) {
+uint32_t rd(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t interval, bool strict) {
     bank_addr &= 0xF; // 4 bits
     col_addr &= 0x3FF; // 10 bits
     uint32_t nck = 1 + interval;
@@ -157,23 +157,23 @@ uint32_t rd(uint8_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t inte
     // Receive Data
     dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
     // Copy Data to Buffer
-    memcpy(buffer, (uint8_t *)udmabuf_vptr, 64 * sizeof(uint8_t)); // 512 bits, 64 bytes
+    memcpy(buffer, (uint32_t *)udmabuf_vptr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
     return nck;
 }
 
 // Write Command
-uint32_t wr(uint8_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t interval, bool strict) {
+uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t interval, bool strict) {
     bank_addr &= 0xF; // 4 bits
     col_addr &= 0x3FF; // 10 bits
     uint32_t nck = 1 + interval;
     uint32_t cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
     bram_vptr[0] = cmd;
     // Set write data
-    uint8_t *ptr = (uint8_t *)udmabuf_vptr;
-    for (int i = 0; i < 64; i++) {
+    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+    for (int i = 0; i < 16; i++) {
         ptr[i] = buffer[i];
     }
-    dma_send(dma0_vptr, udmabuf_phys_addr, 64 * sizeof(uint8_t)); // 512 bits, 64 bytes
+    dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
     // Send Command
     dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t)); // 512 bits, 16 commands
     return nck;
