@@ -21,7 +21,7 @@
 # 1. This project restoration tcl script (create_project.tcl) that was generated.
 #
 # 2. The following source(s) files that were local or imported into the original project.
-#    (Please see the '$orig_proj_dir' and '$origin_dir' variable setting below at the start of the script)
+#    (Please see the '$orig_proj_dir' and '\$origin_dir_dir' variable setting below at the start of the script)
 #
 #    <none>
 #
@@ -47,19 +47,19 @@
 proc checkRequiredFiles { origin_dir} {
   set status true
   set files [list \
- "[file normalize "$origin_dir/../src/hdl/axi4_read_data.v"]"\
- "[file normalize "$origin_dir/../src/hdl/axi4_write_data.v"]"\
- "[file normalize "$origin_dir/../src/header/project.vh"]"\
- "[file normalize "$origin_dir/../src/header/parameters.vh"]"\
- "[file normalize "$origin_dir/../src/hdl/ddr4_adapter.v"]"\
- "[file normalize "$origin_dir/../src/hdl/ddr4_mc_odt.v"]"\
- "[file normalize "$origin_dir/../src/hdl/axi4_instr.sv"]"\
- "[file normalize "$origin_dir/../src/hdl/top.v"]"\
- "[file normalize "$origin_dir/../src/ip/axis_clock_converter1/axis_clock_converter1.xci"]"\
- "[file normalize "$origin_dir/../src/ip/phy_ddr4_udimm/phy_ddr4_udimm.xci"]"\
- "[file normalize "$origin_dir/../src/ip/axis_clock_converter0/axis_clock_converter0.xci"]"\
- "[file normalize "$origin_dir/../src/ip/axis_clock_converter2/axis_clock_converter2.xci"]"\
- "[file normalize "$origin_dir/../src/constraints/ZCU104_C1_UDIMM.xdc"]"\
+ "[file normalize "\$origin_dir/../src/hardware/hdl/axi4_read_data.v"]"\
+ "[file normalize "\$origin_dir/../src/hardware/hdl/axi4_write_data.v"]"\
+ "[file normalize "\$origin_dir/../src/hardware/header/project.vh"]"\
+ "[file normalize "\$origin_dir/../src/hardware/header/parameters.vh"]"\
+ "[file normalize "\$origin_dir/../src/hardware/hdl/ddr4_adapter.v"]"\
+ "[file normalize "\$origin_dir/../src/hardware/hdl/ddr4_mc_odt.v"]"\
+ "[file normalize "\$origin_dir/../src/hardware/hdl/axi4_instr.sv"]"\
+ "[file normalize "\$origin_dir/../src/hardware/hdl/top.v"]"\
+ "[file normalize "\$origin_dir/../src/hardware/ip/axis_clock_converter1/axis_clock_converter1.xci"]"\
+ "[file normalize "\$origin_dir/../src/hardware/ip/phy_ddr4_udimm/phy_ddr4_udimm.xci"]"\
+ "[file normalize "\$origin_dir/../src/hardware/ip/axis_clock_converter0/axis_clock_converter0.xci"]"\
+ "[file normalize "\$origin_dir/../src/hardware/ip/axis_clock_converter2/axis_clock_converter2.xci"]"\
+ "[file normalize "\$origin_dir/../src/hardware/constraints/ZCU104_C1_UDIMM.xdc"]"\
   ]
   foreach ifile $files {
     if { ![file isfile $ifile] } {
@@ -135,12 +135,12 @@ if { $::argc > 0 } {
 }
 
 # Set the directory path for the original project from where this script was exported
-set orig_proj_dir "[file normalize "$origin_dir/../vivado"]"
+set orig_proj_dir "[file normalize "\$origin_dir_dir/../vivado"]"
 
 # Check for paths and files needed for project creation
 set validate_required 0
 if { $validate_required } {
-  if { [checkRequiredFiles $origin_dir] } {
+  if { [checkRequiredFiles \$origin_dir_dir] } {
     puts "Tcl file $script_file is valid. All files required for project creation is accesable. "
   } else {
     puts "Tcl file $script_file is not valid. Not all files required for project creation is accesable. "
@@ -185,29 +185,29 @@ if {[string equal [get_filesets -quiet sources_1] ""]} {
 # Set 'sources_1' fileset object
 set obj [get_filesets sources_1]
 set files [list \
- [file normalize "${origin_dir}/../src/hdl/axi4_read_data.v"] \
- [file normalize "${origin_dir}/../src/hdl/axi4_write_data.v"] \
- [file normalize "${origin_dir}/../src/header/project.vh"] \
- [file normalize "${origin_dir}/../src/header/parameters.vh"] \
- [file normalize "${origin_dir}/../src/hdl/ddr4_adapter.v"] \
- [file normalize "${origin_dir}/../src/hdl/ddr4_mc_odt.v"] \
- [file normalize "${origin_dir}/../src/hdl/axi4_instr.sv"] \
- [file normalize "${origin_dir}/../src/hdl/top.v"] \
+ [file normalize "${origin_dir}/../src/hardware/hdl/axi4_read_data.v"] \
+ [file normalize "${origin_dir}/../src/hardware/hdl/axi4_write_data.v"] \
+ [file normalize "${origin_dir}/../src/hardware/header/project.vh"] \
+ [file normalize "${origin_dir}/../src/hardware/header/parameters.vh"] \
+ [file normalize "${origin_dir}/../src/hardware/hdl/ddr4_adapter.v"] \
+ [file normalize "${origin_dir}/../src/hardware/hdl/ddr4_mc_odt.v"] \
+ [file normalize "${origin_dir}/../src/hardware/hdl/axi4_instr.sv"] \
+ [file normalize "${origin_dir}/../src/hardware/hdl/top.v"] \
 ]
 add_files -norecurse -fileset $obj $files
 
 # Set 'sources_1' fileset file properties for remote files
-set file "$origin_dir/../src/header/project.vh"
+set file "\$origin_dir/../src/hardware/header/project.vh"
 set file [file normalize $file]
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog Header" -objects $file_obj
 
-set file "$origin_dir/../src/header/parameters.vh"
+set file "\$origin_dir/../src/hardware/header/parameters.vh"
 set file [file normalize $file]
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog Header" -objects $file_obj
 
-set file "$origin_dir/../src/hdl/axi4_instr.sv"
+set file "\$origin_dir/../src/hardware/hdl/axi4_instr.sv"
 set file [file normalize $file]
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "SystemVerilog" -objects $file_obj
@@ -224,12 +224,12 @@ set_property -name "top" -value "top" -objects $obj
 # Set 'sources_1' fileset object
 set obj [get_filesets sources_1]
 set files [list \
- [file normalize "${origin_dir}/../src/ip/axis_clock_converter1/axis_clock_converter1.xci"] \
+ [file normalize "${origin_dir}/../src/hardware/ip/axis_clock_converter1/axis_clock_converter1.xci"] \
 ]
 add_files -norecurse -fileset $obj $files
 
 # Set 'sources_1' fileset file properties for remote files
-set file "$origin_dir/../src/ip/axis_clock_converter1/axis_clock_converter1.xci"
+set file "\$origin_dir/../src/hardware/ip/axis_clock_converter1/axis_clock_converter1.xci"
 set file [file normalize $file]
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "generate_files_for_reference" -value "0" -objects $file_obj
@@ -245,12 +245,12 @@ if { ![get_property "is_locked" $file_obj] } {
 # Set 'sources_1' fileset object
 set obj [get_filesets sources_1]
 set files [list \
- [file normalize "${origin_dir}/../src/ip/phy_ddr4_udimm/phy_ddr4_udimm.xci"] \
+ [file normalize "${origin_dir}/../src/hardware/ip/phy_ddr4_udimm/phy_ddr4_udimm.xci"] \
 ]
 add_files -norecurse -fileset $obj $files
 
 # Set 'sources_1' fileset file properties for remote files
-set file "$origin_dir/../src/ip/phy_ddr4_udimm/phy_ddr4_udimm.xci"
+set file "\$origin_dir/../src/hardware/ip/phy_ddr4_udimm/phy_ddr4_udimm.xci"
 set file [file normalize $file]
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "generate_files_for_reference" -value "0" -objects $file_obj
@@ -266,12 +266,12 @@ if { ![get_property "is_locked" $file_obj] } {
 # Set 'sources_1' fileset object
 set obj [get_filesets sources_1]
 set files [list \
- [file normalize "${origin_dir}/../src/ip/axis_clock_converter0/axis_clock_converter0.xci"] \
+ [file normalize "${origin_dir}/../src/hardware/ip/axis_clock_converter0/axis_clock_converter0.xci"] \
 ]
 add_files -norecurse -fileset $obj $files
 
 # Set 'sources_1' fileset file properties for remote files
-set file "$origin_dir/../src/ip/axis_clock_converter0/axis_clock_converter0.xci"
+set file "\$origin_dir/../src/hardware/ip/axis_clock_converter0/axis_clock_converter0.xci"
 set file [file normalize $file]
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "generate_files_for_reference" -value "0" -objects $file_obj
@@ -287,12 +287,12 @@ if { ![get_property "is_locked" $file_obj] } {
 # Set 'sources_1' fileset object
 set obj [get_filesets sources_1]
 set files [list \
- [file normalize "${origin_dir}/../src/ip/axis_clock_converter2/axis_clock_converter2.xci"] \
+ [file normalize "${origin_dir}/../src/hardware/ip/axis_clock_converter2/axis_clock_converter2.xci"] \
 ]
 add_files -norecurse -fileset $obj $files
 
 # Set 'sources_1' fileset file properties for remote files
-set file "$origin_dir/../src/ip/axis_clock_converter2/axis_clock_converter2.xci"
+set file "\$origin_dir/../src/hardware/ip/axis_clock_converter2/axis_clock_converter2.xci"
 set file [file normalize $file]
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "generate_files_for_reference" -value "0" -objects $file_obj
@@ -314,9 +314,9 @@ if {[string equal [get_filesets -quiet constrs_1] ""]} {
 set obj [get_filesets constrs_1]
 
 # Add/Import constrs file and set constrs file properties
-set file "[file normalize "$origin_dir/../src/constraints/ZCU104_C1_UDIMM.xdc"]"
+set file "[file normalize "\$origin_dir/../src/hardware/constraints/ZCU104_C1_UDIMM.xdc"]"
 set file_added [add_files -norecurse -fileset $obj [list $file]]
-set file "$origin_dir/../src/constraints/ZCU104_C1_UDIMM.xdc"
+set file "\$origin_dir/../src/hardware/constraints/ZCU104_C1_UDIMM.xdc"
 set file [file normalize $file]
 set file_obj [get_files -of_objects [get_filesets constrs_1] [list "*$file"]]
 set_property -name "file_type" -value "XDC" -objects $file_obj
