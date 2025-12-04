@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -123,57 +125,105 @@ void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     while (!(REG_READ(base + S2MM_DMASR) & 0x02));
 }
 
-int activate() {
-    return 0;
+// Precharge Command
+uint32_t pre(uint8_t bank_addr, uint8_t rank_addr, bool bank_all, uint32_t interval, bool strict) {
+    bank_addr &= 0xF; // 4 bits
+    uint32_t nck = 1 + interval;
+    uint32_t cmd = 1 | (bank_addr << 3); // Precharge
+    bram_vptr[0] = cmd;
+    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t)); // 512 bits, 16 commands
+    return nck;
 }
 
-void set_write_data(uint8_t b) {
+// Activation Command
+uint32_t act(uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr, uint32_t interval, bool strict) {
+    bank_addr &= 0xF; // 4 bits
+    row_addr &= 0x7FFF; // 17 bits
+    uint32_t nck = 1 + interval;
+    uint32_t cmd = 2 | (bank_addr << 3) | (row_addr << 7); // Activate
+    bram_vptr[0] = cmd;
+    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t)); // 512 bits, 16 commands
+    return nck;
+}
+
+// Read Command
+uint32_t rd(uint8_t *buffer, uint16_t col_addr, uint32_t interval, bool strict) {
+    col_addr &= 0x3FF; // 10 bits
+    uint32_t nck = 1 + interval;
+    uint32_t cmd = 3 | (col_addr << 7); // Read
+    bram_vptr[0] = cmd;
+    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t)); // 512 bits, 16 commands
+    // Receive Data
+    dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
+    // Copy Data to Buffer
+    memcpy(buffer, (uint8_t *)udmabuf_vptr, 64 * sizeof(uint8_t)); // 512 bits, 64 bytes
+    return nck;
+}
+
+// Write Command
+uint32_t wr(uint8_t *buffer, uint16_t col_addr, uint32_t interval, bool strict) {
+    col_addr &= 0x3FF; // 10 bits
+    uint32_t nck = 1 + interval;
+    uint32_t cmd = 4 | (col_addr << 7); // Write
+    bram_vptr[0] = cmd;
+    // Set write data
     uint8_t *ptr = (uint8_t *)udmabuf_vptr;
     for (int i = 0; i < 64; i++) {
-        ptr[i] = b;
+        ptr[i] = buffer[i];
     }
-    dma_send(dma0_vptr, udmabuf_phys_addr, 64 * sizeof(uint8_t));
+    dma_send(dma0_vptr, udmabuf_phys_addr, 64 * sizeof(uint8_t)); // 512 bits, 64 bytes
+    // Send Command
+    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t)); // 512 bits, 16 commands
+    return nck;
 }
 
-void write_cmd(uint32_t row) {
-    uint32_t stages;
-    // Precharge
-    stages = 3;
-    bram_vptr[0] = 1 | (stages << 24);
-    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
-    // Activate
-    stages = 3;
-    bram_vptr[0] = 2 | (row << 7) | (stages << 24);
-    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
-    // Write
-    stages = 3;
-    bram_vptr[0] = 4 | (stages << 24);
-    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
-}
+// void set_write_data(uint8_t b) {
+//     uint8_t *ptr = (uint8_t *)udmabuf_vptr;
+//     for (int i = 0; i < 64; i++) {
+//         ptr[i] = b;
+//     }
+//     dma_send(dma0_vptr, udmabuf_phys_addr, 64 * sizeof(uint8_t));
+// }
 
-void read_cmd(uint32_t row) {
-    uint32_t stages;
-    // Precharge
-    stages = 3;
-    bram_vptr[0] = 1 | (stages << 24);
-    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
-    // Activate
-    stages = 3;
-    bram_vptr[0] = 2 | (row << 7) | (stages << 24);
-    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
-    // Read
-    stages = 3;
-    bram_vptr[0] = 3 | (stages << 24);
-    dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
-    // Receive Data
-    dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t));
-    // Print Data
-    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
-    for (int i = 0; i < 16; i++) {
-        printf("%08x ", ptr[i]);
-        if (i % 8 == 7) {
-            printf("\n");
-        }
-    }
-    printf("\n");
-}
+// void write_cmd(uint32_t row) {
+//     uint32_t stages;
+//     // Precharge
+//     stages = 3;
+//     bram_vptr[0] = 1 | (stages << 24);
+//     dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
+//     // Activate
+//     stages = 3;
+//     bram_vptr[0] = 2 | (row << 7) | (stages << 24);
+//     dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
+//     // Write
+//     stages = 3;
+//     bram_vptr[0] = 4 | (stages << 24);
+//     dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
+// }
+
+// void read_cmd(uint32_t row) {
+//     uint32_t stages;
+//     // Precharge
+//     stages = 3;
+//     bram_vptr[0] = 1 | (stages << 24);
+//     dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
+//     // Activate
+//     stages = 3;
+//     bram_vptr[0] = 2 | (row << 7) | (stages << 24);
+//     dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
+//     // Read
+//     stages = 3;
+//     bram_vptr[0] = 3 | (stages << 24);
+//     dma_send(dma1_vptr, BRAM_PHYS_BASE, 16 * sizeof(uint32_t));
+//     // Receive Data
+//     dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t));
+//     // Print Data
+//     uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+//     for (int i = 0; i < 16; i++) {
+//         printf("%08x ", ptr[i]);
+//         if (i % 8 == 7) {
+//             printf("\n");
+//         }
+//     }
+//     printf("\n");
+// }
