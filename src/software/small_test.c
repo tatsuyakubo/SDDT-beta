@@ -23,7 +23,7 @@ int main(int argc, char *argv[]) {
 
     uint8_t n_ranks = 1;
     uint8_t n_banks = 16;
-    uint32_t n_rows = 128;
+    uint32_t n_rows = 256;
     const uint32_t total_tests = n_ranks * n_banks * n_rows; // ranks * banks * rows
 
     uint32_t test_count = 0;
