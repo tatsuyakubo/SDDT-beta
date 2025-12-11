@@ -541,7 +541,6 @@ module top #(parameter tCK = 1500, SIM = "false")
   wire S_AXIS_S2MM_0_tready;
   wire S_AXIS_S2MM_0_tvalid;
   wire axi_resetn;
-  wire m_axi_mm2s_aclk;
   wire [31:0] axi_gpio_in;
   wire [31:0] axi_gpio_in2;
   wire [31:0] axi_gpio_out;
@@ -564,7 +563,7 @@ module top #(parameter tCK = 1500, SIM = "false")
         .S_AXIS_S2MM_0_tready(S_AXIS_S2MM_0_tready),
         .S_AXIS_S2MM_0_tvalid(S_AXIS_S2MM_0_tvalid),
         .axi_resetn(axi_resetn),
-        .m_axi_mm2s_aclk(m_axi_mm2s_aclk),
+        .c0_ddr4_clk(c0_ddr4_clk),
         .axi_gpio_in(axi_gpio_in),
         .axi_gpio_in2(axi_gpio_in2),
         .axi_gpio_out(axi_gpio_out));
@@ -586,7 +585,7 @@ module top #(parameter tCK = 1500, SIM = "false")
   // maxis_test #(
   //   .BITWIDTH(512)
   // ) maxis_test (
-  //   .clk(m_axi_mm2s_aclk),
+  //   .clk(c0_ddr4_clk),
   //   .rst(~axi_resetn),
   //   .M_AXIS_TDATA(S_AXIS_S2MM_0_tdata),
   //   .M_AXIS_TVALID(S_AXIS_S2MM_0_tvalid),
@@ -596,61 +595,23 @@ module top #(parameter tCK = 1500, SIM = "false")
   // );
 
   // assign m_axis_c2h_tready_0 = 1'b1;
-  axis_clock_converter0 axis_clk_conv_i0
-  (
-    .s_axis_tvalid(m_axis_c2h_tvalid_0),
-    .s_axis_tlast(m_axis_c2h_tlast_0),
-    .s_axis_tdata(m_axis_c2h_tdata_0),
-    .s_axis_tkeep(m_axis_c2h_tkeep_0),
-    .s_axis_tready(m_axis_c2h_tready_0),
-    .m_axis_tvalid(S_AXIS_S2MM_0_tvalid),
-    .m_axis_tlast(S_AXIS_S2MM_0_tlast),
-    .m_axis_tdata(S_AXIS_S2MM_0_tdata),
-    .m_axis_tkeep(S_AXIS_S2MM_0_tkeep),
-    .m_axis_tready(S_AXIS_S2MM_0_tready),
-    .s_axis_aresetn(~c0_ddr4_rst),
-    .s_axis_aclk(c0_ddr4_clk),
-    .m_axis_aresetn(axi_resetn),
-    .m_axis_aclk(m_axi_mm2s_aclk)
-  );
+  // Clock converters removed - signals connected directly
+  // c2h (c2h -> S2MM) direct connection
+  assign S_AXIS_S2MM_0_tvalid = m_axis_c2h_tvalid_0;
+  assign S_AXIS_S2MM_0_tlast = m_axis_c2h_tlast_0;
+  assign S_AXIS_S2MM_0_tdata = m_axis_c2h_tdata_0;
+  assign S_AXIS_S2MM_0_tkeep = m_axis_c2h_tkeep_0;
+  assign m_axis_c2h_tready_0 = S_AXIS_S2MM_0_tready;
   
-  // Clock converter for the h2c interface
-  axis_clock_converter1 axis_clk_conv_i1
-  (
-    .m_axis_tvalid(s_axis_h2c_tvalid_0),
-    // .m_axis_tlast(s_axis_h2c_tlast_0),
-    .m_axis_tdata(s_axis_h2c_tdata_0),
-    // .m_axis_tkeep(s_axis_h2c_tkeep_0),
-    .m_axis_tready(s_axis_h2c_tready_0),
-    .s_axis_tvalid(M_AXIS_MM2S_0_tvalid),
-    // .s_axis_tlast(M_AXIS_MM2S_0_tlast),
-    .s_axis_tdata(M_AXIS_MM2S_0_tdata),
-    // .s_axis_tkeep(M_AXIS_MM2S_0_tkeep),
-    .s_axis_tready(M_AXIS_MM2S_0_tready),
-    .m_axis_aresetn(~c0_ddr4_rst),
-    .m_axis_aclk(c0_ddr4_clk),
-    .s_axis_aresetn(axi_resetn),
-    .s_axis_aclk(m_axi_mm2s_aclk)
-  );
+  // h2c interface 0 (MM2S -> h2c) direct connection
+  assign s_axis_h2c_tvalid_0 = M_AXIS_MM2S_0_tvalid;
+  assign s_axis_h2c_tdata_0 = M_AXIS_MM2S_0_tdata;
+  assign M_AXIS_MM2S_0_tready = s_axis_h2c_tready_0;
 
-  // Clock converter for the h2c interface
-  axis_clock_converter2 axis_clk_conv_i2
-  (
-    .m_axis_tvalid(s_axis_h2c_tvalid_1),
-    // .m_axis_tlast(s_axis_h2c_tlast_1),
-    .m_axis_tdata(s_axis_h2c_tdata_1),
-    // .m_axis_tkeep(s_axis_h2c_tkeep_1),
-    .m_axis_tready(s_axis_h2c_tready_1),
-    .s_axis_tvalid(M_AXIS_MM2S_1_tvalid),
-    // .s_axis_tlast(M_AXIS_MM2S_1_tlast),
-    .s_axis_tdata(M_AXIS_MM2S_1_tdata),
-    // .s_axis_tkeep(M_AXIS_MM2S_1_tkeep),
-    .s_axis_tready(M_AXIS_MM2S_1_tready),
-    .m_axis_aresetn(~c0_ddr4_rst),
-    .m_axis_aclk(c0_ddr4_clk),
-    .s_axis_aresetn(axi_resetn),
-    .s_axis_aclk(m_axi_mm2s_aclk)
-  );
+  // h2c interface 1 (MM2S -> h2c) direct connection
+  assign s_axis_h2c_tvalid_1 = M_AXIS_MM2S_1_tvalid;
+  assign s_axis_h2c_tdata_1 = M_AXIS_MM2S_1_tdata;
+  assign M_AXIS_MM2S_1_tready = s_axis_h2c_tready_1;
 
 
   assign buffer_space = 11'b0;
