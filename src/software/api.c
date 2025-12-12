@@ -194,7 +194,7 @@ void fifo_send(uint32_t data, uint32_t interval) {
 // Precharge Command
 uint32_t pre(uint8_t bank_addr, uint8_t rank_addr, bool bank_all, uint32_t interval, bool strict) {
     bank_addr &= 0xF; // 4 bits
-    uint32_t cmd = 1 | (bank_addr << 3); // Precharge
+    uint32_t cmd = 1 | (bank_addr << 3) | (bank_all << 7); // Precharge
     fifo_send(cmd, interval);
     uint32_t nck = 1 + interval;
     return nck;
@@ -236,6 +236,14 @@ uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
     }
     dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
     // Send command
+    fifo_send(cmd, interval);
+    uint32_t nck = 1 + interval;
+    return nck;
+}
+
+// Refresh Command
+uint32_t rf(uint32_t interval, bool strict) {
+    uint32_t cmd = 5; // Refresh
     fifo_send(cmd, interval);
     uint32_t nck = 1 + interval;
     return nck;

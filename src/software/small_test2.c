@@ -17,25 +17,37 @@ int main(int argc, char *argv[]) {
     }
     uint32_t seed = strtol(argv[1], NULL, 16);
 
-    // Initialize hardware
-    if (setup_hardware() != 0) return -1;
-    printf("Hardware mapped successfully.\n");
-
+    // Parameters
     uint8_t n_ranks = 1;
     uint8_t n_banks = 16;
     uint32_t n_rows = 256;
     const uint32_t total_tests = n_ranks * n_banks * n_rows; // ranks * banks * rows
 
+    // Initialize hardware
+    if (setup_hardware() != 0) return -1;
+    printf("Hardware mapped successfully.\n\n");
+
+    // Write operations
+    printf("Starting write operations...\n");
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
     for (uint8_t rank_addr = 0; rank_addr < n_ranks; rank_addr++) {
         for (uint8_t bank_addr = 0; bank_addr < n_banks; bank_addr++) {
             for (uint32_t row_addr = 0; row_addr < n_rows; row_addr++) {
                 gen_data_pattern(write_data_buf, bank_addr, row_addr, rank_addr, seed);
-                uint32_t nck = 0;
-                nck += write_row(write_data_buf, bank_addr, row_addr, rank_addr);
+                write_row(write_data_buf, bank_addr, row_addr, rank_addr);
+                all_bank_refresh(rank_addr);
             }
         }
     }
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    printf("Write operations done.\n");
+    double write_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    printf("Time taken: %f seconds, refresh interval: %fus (tREFI = 7.8us)\n\n", write_time, write_time/n_ranks/n_banks/n_rows*1e6);
 
+    // Read operations
+    printf("Starting read operations...\n");
+    clock_gettime(CLOCK_MONOTONIC, &start);
     uint32_t test_count = 0;
     for (uint8_t rank_addr = 0; rank_addr < n_ranks; rank_addr++) {
         for (uint8_t bank_addr = 0; bank_addr < n_banks; bank_addr++) {
@@ -55,10 +67,15 @@ int main(int argc, char *argv[]) {
                 test_count++;
                 printf("Test passed (%u / %u) - rank %u, bank %u, row %u\r", test_count, total_tests, rank_addr, bank_addr, row_addr);
                 fflush(stdout);
+                all_bank_refresh(rank_addr);
             }
         }
     }
     printf("\n");
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    printf("Read operations done.\n");
+    double read_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+    printf("Time taken: %f seconds, refresh interval: %fus (tREFI = 7.8us)\n\n", read_time, read_time/n_ranks/n_banks/n_rows*1e6);
 
     // Cleanup
     cleanup_hardware();
