@@ -27,10 +27,10 @@ module axi4_instr #(parameter
     output reg [3:0]                ddr_ap,
     output reg [3:0]                ddr_half_bl,
     output reg [3:0]                ddr_pall,
-    output reg [4*BG_WIDTH-1:0]    ddr_bg, 
-    output reg [4*BANK_WIDTH-1:0]  ddr_bank,
-    output reg [4*COL_WIDTH-1:0]   ddr_col,
-    output reg [4*ROW_WIDTH-1:0]   ddr_row
+    output reg [4*BG_WIDTH-1:0]     ddr_bg, 
+    output reg [4*BANK_WIDTH-1:0]   ddr_bank,
+    output reg [4*COL_WIDTH-1:0]    ddr_col,
+    output reg [4*ROW_WIDTH-1:0]    ddr_row
 );
 
     reg [511:0] latest_instrs;
@@ -69,6 +69,7 @@ module axi4_instr #(parameter
                 ddr_bg[i*BG_WIDTH+:BG_WIDTH] <= latest_instrs[i*32+3+BANK_WIDTH+:BG_WIDTH];
                 ddr_row[i*ROW_WIDTH+:ROW_WIDTH] <= latest_instrs[i*32+3+BANK_WIDTH+BG_WIDTH+:ROW_WIDTH];
                 ddr_col[i*COL_WIDTH+:COL_WIDTH] <= latest_instrs[i*32+3+BANK_WIDTH+BG_WIDTH+:COL_WIDTH];
+                ddr_pall[i] <= latest_instrs[i*32+3+BANK_WIDTH+BG_WIDTH+:1];
                 if (latest_instrs[i*32+:3] == 3'd0) begin
                     // NOP
                     ddr_nop[i] <= 1'b1;
@@ -84,6 +85,9 @@ module axi4_instr #(parameter
                 end else if (latest_instrs[i*32+:3] == 3'd4) begin
                     // Write
                     ddr_write[i] <= 1'b1;
+                end else if (latest_instrs[i*32+:3] == 3'd5) begin
+                    // Refresh
+                    ddr_ref[i] <= 1'b1;
                 end
             end
         end
