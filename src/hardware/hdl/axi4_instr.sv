@@ -9,7 +9,7 @@ module axi4_instr #(parameter
     input wire rst,
 
     // AXI -> Instr
-    input wire [511:0] S_AXIS_TDATA,
+    input wire [127:0] S_AXIS_TDATA,
     input wire S_AXIS_TVALID,
     output logic S_AXIS_TREADY,
 
@@ -33,11 +33,10 @@ module axi4_instr #(parameter
     output reg [4*ROW_WIDTH-1:0]    ddr_row
 );
 
-    reg [511:0] latest_instrs;
-    reg [2:0] stage;
+    reg [127:0] latest_instrs;
 
-    // AXI4-Stream slave interface
-    assign S_AXIS_TREADY = stage == 'd0;
+    // AXI4-Stream slave interface - always ready to receive
+    assign S_AXIS_TREADY = 1'b1;
 
     assign latest_instr_id = latest_instrs[2:0];
 
@@ -45,22 +44,17 @@ module axi4_instr #(parameter
     always @(posedge clk) begin
         if (rst) begin
             latest_instrs <= 'd0;
-            stage <= 'd0;
             {ddr_write, ddr_read, ddr_pre, ddr_act, ddr_ref, ddr_zq, ddr_nop, ddr_ap, ddr_half_bl, ddr_pall,
             ddr_bg, ddr_bank, ddr_col, ddr_row} <= '0;
         end else begin
-            if (stage == 'd0) begin
-                if (S_AXIS_TVALID) begin
-                    latest_instrs <= S_AXIS_TDATA;
-                    stage <= 'd3;
-                end else begin
-                    latest_instrs <= 'd0;
-                end
+            // Receive data every cycle
+            if (S_AXIS_TVALID) begin
+                latest_instrs <= S_AXIS_TDATA;
             end else begin
-                stage <= stage - 'd1;
-                latest_instrs <= {128'd0, latest_instrs[511:128]};
+                latest_instrs <= 'd0;
             end
 
+            // Process latest_instrs every cycle
             // initialize all outputs to zero
             {ddr_write, ddr_read, ddr_pre, ddr_act, ddr_ref, ddr_zq, ddr_nop, ddr_ap, ddr_half_bl, ddr_pall,
             ddr_bg, ddr_bank, ddr_col, ddr_row} <= '0;
