@@ -41,7 +41,7 @@ void *udmabuf_vptr;
 unsigned int udmabuf_size;
 unsigned long udmabuf_phys_addr;
 
-// Cleanup memory mappings
+// Cleanup Memory Mappings
 static void cleanup_mem_mappings(void) {
     if (udmabuf_vptr != NULL && udmabuf_vptr != MAP_FAILED) {
         munmap(udmabuf_vptr, udmabuf_size);
@@ -65,7 +65,7 @@ static void cleanup_mem_mappings(void) {
     }
 }
 
-// Read and parse sysfs attribute
+// Read and Parse Sysfs Attribute
 static int read_sysfs_attr(const char *path, const char *format, void *value) {
     int tmp_fd;
     unsigned char attr[1024];
@@ -88,7 +88,7 @@ static int read_sysfs_attr(const char *path, const char *format, void *value) {
     return 0;
 }
 
-// Initialize hardware
+// Initialize Hardware
 int setup_hardware() {
     // Initialize file descriptors to invalid values
     mem_fd = -1;
@@ -126,7 +126,7 @@ int setup_hardware() {
         cleanup_mem_mappings();
         return -1;
     }
-    // Map UDMA Buffer
+    // Map udmabuf
     if ((udmabuf_fd = open("/dev/udmabuf0", O_RDWR | O_SYNC)) == -1) {
         perror("Failed to open /dev/udmabuf0");
         cleanup_mem_mappings();
@@ -141,7 +141,7 @@ int setup_hardware() {
     return 0;
 }
 
-// Cleanup hardware
+// Cleanup Hardware
 void cleanup_hardware() {
     cleanup_mem_mappings();
 }
@@ -152,12 +152,12 @@ void dma_send(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     // Run/Stop bit = 1
     uint32_t cr = REG_READ(base + MM2S_DMACR);
     REG_WRITE(base + MM2S_DMACR, cr | 1);
-    // Set Source Address
+    // Set source address
     REG_WRITE(base + MM2S_SA, phys_addr);
     REG_WRITE(base + MM2S_SA_MSB, 0); // 32bit addressing
-    // Set Length (starts transfer)
+    // Set length (starts transfer)
     REG_WRITE(base + MM2S_LENGTH, length_bytes);
-    // Wait for Idle (bit 1)
+    // Wait for idle (bit 1)
     while (!(REG_READ(base + MM2S_DMASR) & 0x02));
 }
 
@@ -167,12 +167,12 @@ void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     // Run/Stop bit = 1
     uint32_t cr = REG_READ(base + S2MM_DMACR);
     REG_WRITE(base + S2MM_DMACR, cr | 1);
-    // Set Destination Address
+    // Set destination address
     REG_WRITE(base + S2MM_DA, phys_addr);
     REG_WRITE(base + S2MM_DA_MSB, 0); // 32bit addressing
-    // Set Length (starts transfer)
+    // Set length (starts transfer)
     REG_WRITE(base + S2MM_LENGTH, length_bytes);
-    // Wait for Idle (bit 1)
+    // Wait for idle (bit 1)
     while (!(REG_READ(base + S2MM_DMASR) & 0x02));
 }
 
@@ -187,7 +187,7 @@ void fifo_send(uint32_t data, uint32_t interval) {
     for (int i = 0; i < interval; i++) {
         REG_WRITE(base + REG_TDFD, nop);
     }
-    // Set Transfer Length Register
+    // Set transfer length register
     REG_WRITE(base + REG_TLR, 4*(1+interval)); // 64 bytes
 }
 
@@ -216,9 +216,9 @@ uint32_t rd(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
     col_addr &= 0x3FF; // 10 bits
     uint32_t cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
     fifo_send(cmd, interval);
-    // Receive Data
+    // Receive data
     dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
-    // Copy Data to Buffer
+    // Copy data to buffer
     memcpy(buffer, (uint32_t *)udmabuf_vptr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
     uint32_t nck = 1 + interval;
     return nck;
@@ -229,13 +229,13 @@ uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
     bank_addr &= 0xF; // 4 bits
     col_addr &= 0x3FF; // 10 bits
     uint32_t cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
-    // Set write data
+    // Set data
     uint32_t *ptr = (uint32_t *)udmabuf_vptr;
     for (int i = 0; i < 16; i++) {
         ptr[i] = buffer[i];
     }
     dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
-    // Send Command
+    // Send command
     fifo_send(cmd, interval);
     uint32_t nck = 1 + interval;
     return nck;
