@@ -20,6 +20,7 @@ software:
 	make -C src/software
 
 clean:
+	make -C src/software clean
 	rm -rf ./bin
 	rm -f *.jou
 	rm -f *.log

@@ -40,8 +40,9 @@
 
 int mem_fd;
 void *dma0_vptr;
-void *fifo_ctrl_vptr; // Pointer for Lite interface
-void *fifo_data_vptr; // Pointer for Full interface
+void *fifo_ctrl_vptr;                 // Pointer for Lite interface (volatile uint32_t*)
+void *fifo_data_base_vptr;            // Base pointer for Full interface
+volatile uint64_t *fifo_data_wr_vptr; // Write pointer for Full interface
 int udmabuf_fd;
 void *udmabuf_vptr;
 unsigned int udmabuf_size;
@@ -61,9 +62,12 @@ static void cleanup_mem_mappings(void) {
         munmap(fifo_ctrl_vptr, AXI_FIFO_CTRL_SIZE);
         fifo_ctrl_vptr = NULL;
     }
-    if (fifo_data_vptr != NULL && fifo_data_vptr != MAP_FAILED) {
-        munmap(fifo_data_vptr, AXI_FIFO_DATA_SIZE);
-        fifo_data_vptr = NULL;
+    if (fifo_data_base_vptr != NULL && fifo_data_base_vptr != MAP_FAILED) {
+        munmap(fifo_data_base_vptr, AXI_FIFO_DATA_SIZE);
+        fifo_data_base_vptr = NULL;
+    }
+    if (fifo_data_wr_vptr != NULL) {
+        fifo_data_wr_vptr = NULL;
     }
     if (dma0_vptr != NULL && dma0_vptr != MAP_FAILED) {
         munmap(dma0_vptr, AXI_DMA_0_SIZE);
@@ -105,7 +109,8 @@ int setup_hardware() {
     udmabuf_fd = -1;
     dma0_vptr = NULL;
     fifo_ctrl_vptr = NULL;
-    fifo_data_vptr = NULL;
+    fifo_data_base_vptr = NULL;
+    fifo_data_wr_vptr = NULL;
     udmabuf_vptr = NULL;
     // Open /dev/mem
     if ((mem_fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
@@ -126,25 +131,32 @@ int setup_hardware() {
         cleanup_mem_mappings();
         return -1;
     }
-    // Reset FIFO
-    volatile uint8_t *ctrl_base = (volatile uint8_t *)fifo_ctrl_vptr;
-    REG_WRITE(ctrl_base + REG_TDFR, FIFO_RESET_KEY);
-    usleep(1000);
-    REG_WRITE(ctrl_base + REG_ISR, 0xFFFFFFFF); // Clear all interrupts
-    // Map FIFO Data
-    fifo_data_vptr = mmap(NULL, AXI_FIFO_DATA_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, AXI_FIFO_DATA_BASE);
-    if (fifo_data_vptr == MAP_FAILED) {
-        perror("Failed to map FIFO Data");
+    // Map FIFO Data Base
+    fifo_data_base_vptr = mmap(NULL, AXI_FIFO_DATA_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, AXI_FIFO_DATA_BASE);
+    if (fifo_data_base_vptr == MAP_FAILED) {
+        perror("Failed to map FIFO Data Base");
         cleanup_mem_mappings();
         return -1;
     }
+    // Map FIFO Data Write
+    fifo_data_wr_vptr = (volatile uint64_t *)fifo_data_base_vptr;
+
+    // Reset FIFO by writing 0xA5 to TDFR (0x18)
+    volatile uint8_t *ctrl_base = (volatile uint8_t *)fifo_ctrl_vptr;
+    REG_WRITE(ctrl_base + REG_TDFR, FIFO_RESET_KEY);
+    usleep(1000);
+    // Clear all interrupts
+    REG_WRITE(ctrl_base + REG_ISR, 0xFFFFFFFF);
+
     // Read udmabuf size
     if (read_sysfs_attr("/sys/class/u-dma-buf/udmabuf0/size", "%d", &udmabuf_size) != 0) {
+        perror("Failed to read udmabuf size");
         cleanup_mem_mappings();
         return -1;
     }
     // Read udmabuf phys_addr
     if (read_sysfs_attr("/sys/class/u-dma-buf/udmabuf0/phys_addr", "%lx", &udmabuf_phys_addr) != 0) {
+        perror("Failed to read udmabuf phys_addr");
         cleanup_mem_mappings();
         return -1;
     }
@@ -198,60 +210,27 @@ void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     while (!(REG_READ(base + S2MM_DMASR) & 0x02));
 }
 
-// FIFO Send (64-bit)
-void fifo_send_64bit(uint32_t data, uint32_t interval) {
+// FIFO Send
+void fifo_send(uint32_t data, uint32_t interval) {
     volatile uint8_t *ctrl_base = (volatile uint8_t *)fifo_ctrl_vptr;
-    volatile uint64_t *data_base = (volatile uint64_t *)fifo_data_vptr;
-    // Pack data(32bit) + interval*NOP(32bit) into 64bit words (2x32bit per 64bit)
-    uint32_t num_64bit_words = (1 + interval + 1) / 2; // ceil((1+interval)/2)
-    uint32_t packet_len_bytes = 8 * num_64bit_words;
+    uint32_t packet_len_bytes = 8*(1 + interval);
     if (packet_len_bytes > 8*AXI_FIFO_DATA_SIZE) {
         fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
         exit(1);
     }
     // Check for free space (Lite interface)
-    while (REG_READ(ctrl_base + REG_TDFV) < num_64bit_words);
-    // Write data (Full interface) -> burst transfer!
-    // First 64bit: data(lower 32bit) + first NOP(upper 32bit)
-    data_base[0] = ((uint64_t)0 << 32) | data;
-    // Remaining NOPs packed 2 per 64bit word (all NOPs are 0)
-    // Loop unrolling and NEON can be used for further speedup
-    for (int i = 1; i < num_64bit_words; i++) {
-        data_base[0] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
-    }
-    // Trigger transmission (Lite interface)
-    // When this is written, the data in the buffer is output as a stream.
-    REG_WRITE(ctrl_base + REG_TLR, packet_len_bytes);
-}
-
-// FIFO Send (32-bit)
-void fifo_send_32bit(uint32_t data, uint32_t interval) {
-    volatile uint8_t *ctrl_base = (volatile uint8_t *)fifo_ctrl_vptr;
-    volatile uint32_t *data_base = (volatile uint32_t *)fifo_data_vptr;
-    uint32_t packet_len_bytes = 4*(1 + interval);
-    if (packet_len_bytes > 4*AXI_FIFO_DATA_SIZE) {
-        fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
-        exit(1);
-    }
-    // Check for free space (Lite interface)
-    while (REG_READ(ctrl_base + REG_TDFV) < (packet_len_bytes / 4));
+    while (REG_READ(ctrl_base + REG_TDFV) < (packet_len_bytes / 8));
     // Write data (Full interface) -> burst transfer!
     // Command
-    data_base[0] = data;
+    fifo_data_wr_vptr[0] = (0ULL << 32) | data;
     // Interval (NOP)
     // Loop unrolling and NEON can be used for further speedup
     for (int i = 1; i < interval+1; i++) {
-        data_base[0] = 0; 
+        fifo_data_wr_vptr[0] = 0; 
     }
     // Trigger transmission (Lite interface)
     // When this is written, the data in the buffer is output as a stream.
     REG_WRITE(ctrl_base + REG_TLR, packet_len_bytes);
-}
-
-// FIFO Send
-void fifo_send(uint32_t data, uint32_t interval) {
-    // fifo_send_32bit(data, interval);
-    fifo_send_64bit(data, interval);
 }
 
 // Precharge Command
@@ -310,4 +289,22 @@ uint32_t rf(uint32_t interval, bool strict) {
     fifo_send(cmd, interval);
     uint32_t nck = 1 + interval;
     return nck;
+}
+
+int main(int argc, char *argv[]) {
+    if (setup_hardware() != 0) return -1;
+    printf("Hardware mapped successfully.\n");
+
+    volatile uint8_t *ctrl_base = (volatile uint8_t *)fifo_ctrl_vptr;
+
+    printf("FIFO size: %d\n", REG_READ(ctrl_base + REG_TDFV));
+
+    pre(0, 0, 0, 9, 0);
+    // act(0, 0, 0, 9, 0);
+
+    printf("FIFO size: %d\n", REG_READ(ctrl_base + REG_TDFV));
+
+    cleanup_hardware();
+
+    return 0;
 }
