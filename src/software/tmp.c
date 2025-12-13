@@ -9,10 +9,10 @@
 
 #define AXI_DMA_0_BASE     0xA0000000
 #define AXI_DMA_0_SIZE     0x00010000 // 64KB
-#define AXI_FIFO_CTRL_BASE 0xB0000000
-#define AXI_FIFO_CTRL_SIZE 0x00010000 // 64KB (NOTE: Mapped memory size for MMIO, not FIFO size)
-#define AXI_FIFO_DATA_BASE 0xB0010000
-#define AXI_FIFO_DATA_SIZE 0x00010000 // 64KB (NOTE: Mapped memory size for MMIO, not FIFO size)
+#define AXI_BRIDGE_BASE    0xB0000000
+#define AXI_BRIDGE_SIZE    0x00010000 // 64KB (NOTE: Mapped memory size, not FIFO size)
+// #define AXI_FIFO_DATA_BASE 0xB0010000
+// #define AXI_FIFO_DATA_SIZE 0x00010000 // 64KB (NOTE: Mapped memory size for MMIO, not FIFO size)
 
 // DMA Register Offsets
 #define MM2S_DMACR      0x00 // Control
@@ -40,9 +40,7 @@
 
 int mem_fd;
 void *dma0_vptr;
-void *fifo_ctrl_vptr;                 // Pointer for Lite interface (volatile uint32_t*)
-void *fifo_data_base_vptr;            // Base pointer for Full interface
-volatile uint64_t *fifo_data_wr_vptr; // Write pointer for Full interface
+void *bridge_vptr;
 int udmabuf_fd;
 void *udmabuf_vptr;
 unsigned int udmabuf_size;
@@ -58,16 +56,9 @@ static void cleanup_mem_mappings(void) {
         close(udmabuf_fd);
         udmabuf_fd = -1;
     }
-    if (fifo_ctrl_vptr != NULL && fifo_ctrl_vptr != MAP_FAILED) {
-        munmap(fifo_ctrl_vptr, AXI_FIFO_CTRL_SIZE);
-        fifo_ctrl_vptr = NULL;
-    }
-    if (fifo_data_base_vptr != NULL && fifo_data_base_vptr != MAP_FAILED) {
-        munmap(fifo_data_base_vptr, AXI_FIFO_DATA_SIZE);
-        fifo_data_base_vptr = NULL;
-    }
-    if (fifo_data_wr_vptr != NULL) {
-        fifo_data_wr_vptr = NULL;
+    if (bridge_vptr != NULL && bridge_vptr != MAP_FAILED) {
+        munmap(bridge_vptr, AXI_BRIDGE_SIZE);
+        bridge_vptr = NULL;
     }
     if (dma0_vptr != NULL && dma0_vptr != MAP_FAILED) {
         munmap(dma0_vptr, AXI_DMA_0_SIZE);
@@ -108,9 +99,7 @@ int setup_hardware() {
     mem_fd = -1;
     udmabuf_fd = -1;
     dma0_vptr = NULL;
-    fifo_ctrl_vptr = NULL;
-    fifo_data_base_vptr = NULL;
-    fifo_data_wr_vptr = NULL;
+    bridge_vptr = NULL;
     udmabuf_vptr = NULL;
     // Open /dev/mem
     if ((mem_fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
@@ -124,39 +113,20 @@ int setup_hardware() {
         cleanup_mem_mappings();
         return -1;
     }
-    // Map FIFO Control
-    fifo_ctrl_vptr = mmap(NULL, AXI_FIFO_CTRL_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, AXI_FIFO_CTRL_BASE);
-    if (fifo_ctrl_vptr == MAP_FAILED) {
-        perror("Failed to map FIFO 0");
+    // Map Bridge
+    bridge_vptr = mmap(NULL, AXI_BRIDGE_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, AXI_BRIDGE_BASE);
+    if (bridge_vptr == MAP_FAILED) {
+        perror("Failed to map Bridge");
         cleanup_mem_mappings();
         return -1;
     }
-    // Map FIFO Data Base
-    fifo_data_base_vptr = mmap(NULL, AXI_FIFO_DATA_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, AXI_FIFO_DATA_BASE);
-    if (fifo_data_base_vptr == MAP_FAILED) {
-        perror("Failed to map FIFO Data Base");
-        cleanup_mem_mappings();
-        return -1;
-    }
-    // Map FIFO Data Write
-    fifo_data_wr_vptr = (volatile uint64_t *)fifo_data_base_vptr;
-
-    // Reset FIFO by writing 0xA5 to TDFR (0x18)
-    volatile uint8_t *ctrl_base = (volatile uint8_t *)fifo_ctrl_vptr;
-    REG_WRITE(ctrl_base + REG_TDFR, FIFO_RESET_KEY);
-    usleep(1000);
-    // Clear all interrupts
-    REG_WRITE(ctrl_base + REG_ISR, 0xFFFFFFFF);
-
     // Read udmabuf size
     if (read_sysfs_attr("/sys/class/u-dma-buf/udmabuf0/size", "%d", &udmabuf_size) != 0) {
-        perror("Failed to read udmabuf size");
         cleanup_mem_mappings();
         return -1;
     }
     // Read udmabuf phys_addr
     if (read_sysfs_attr("/sys/class/u-dma-buf/udmabuf0/phys_addr", "%lx", &udmabuf_phys_addr) != 0) {
-        perror("Failed to read udmabuf phys_addr");
         cleanup_mem_mappings();
         return -1;
     }
@@ -210,34 +180,56 @@ void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     while (!(REG_READ(base + S2MM_DMASR) & 0x02));
 }
 
-// FIFO Send
-void fifo_send(uint32_t data, uint32_t interval) {
-    volatile uint8_t *ctrl_base = (volatile uint8_t *)fifo_ctrl_vptr;
-    uint32_t packet_len_bytes = 8*(1 + interval);
-    if (packet_len_bytes > 8*AXI_FIFO_DATA_SIZE) {
-        fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
-        exit(1);
-    }
-    // Check for free space (Lite interface)
-    while (REG_READ(ctrl_base + REG_TDFV) < (packet_len_bytes / 8));
+// // FIFO Send (64-bit)
+// void fifo_send_64bit(uint32_t data, uint32_t interval) {
+//     volatile uint8_t *ctrl_base = (volatile uint8_t *)fifo_ctrl_vptr;
+//     volatile uint64_t *data_base = (volatile uint64_t *)fifo_data_vptr;
+//     // Pack data(32bit) + interval*NOP(32bit) into 64bit words (2x32bit per 64bit)
+//     uint32_t num_64bit_words = (1 + interval + 1) / 2; // ceil((1+interval)/2)
+//     uint32_t packet_len_bytes = 8 * num_64bit_words;
+//     if (packet_len_bytes > 8*AXI_FIFO_DATA_SIZE) {
+//         fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
+//         exit(1);
+//     }
+//     // Check for free space (Lite interface)
+//     while (REG_READ(ctrl_base + REG_TDFV) < num_64bit_words);
+//     // Write data (Full interface) -> burst transfer!
+//     // First 64bit: data(lower 32bit) + first NOP(upper 32bit)
+//     data_base[0] = ((uint64_t)0 << 32) | data;
+//     // Remaining NOPs packed 2 per 64bit word (all NOPs are 0)
+//     // Loop unrolling and NEON can be used for further speedup
+//     for (int i = 1; i < num_64bit_words; i++) {
+//         data_base[0] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
+//     }
+//     // Trigger transmission (Lite interface)
+//     // When this is written, the data in the buffer is output as a stream.
+//     REG_WRITE(ctrl_base + REG_TLR, packet_len_bytes);
+// }
+
+// Command Send (32-bit)
+void cmd_send_32bit(uint32_t cmd, uint32_t interval) {
+    volatile uint32_t *bridge_base = (volatile uint32_t *)bridge_vptr;
     // Write data (Full interface) -> burst transfer!
     // Command
-    fifo_data_wr_vptr[0] = (0ULL << 32) | data;
+    bridge_base[0] = cmd;
     // Interval (NOP)
     // Loop unrolling and NEON can be used for further speedup
     for (int i = 1; i < interval+1; i++) {
-        fifo_data_wr_vptr[0] = 0; 
+        bridge_base[i] = 0; 
     }
-    // Trigger transmission (Lite interface)
-    // When this is written, the data in the buffer is output as a stream.
-    REG_WRITE(ctrl_base + REG_TLR, packet_len_bytes);
+}
+
+// Command Send
+void cmd_send(uint32_t cmd, uint32_t interval) {
+    // fifo_send_32bit(data, interval);
+    cmd_send_32bit(cmd, interval);
 }
 
 // Precharge Command
 uint32_t pre(uint8_t bank_addr, uint8_t rank_addr, bool bank_all, uint32_t interval, bool strict) {
     bank_addr &= 0xF; // 4 bits
     uint32_t cmd = 1 | (bank_addr << 3) | (bank_all << 7); // Precharge
-    fifo_send(cmd, interval);
+    cmd_send(cmd, interval);
     uint32_t nck = 1 + interval;
     return nck;
 }
@@ -247,7 +239,7 @@ uint32_t act(uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr, uint32_t i
     bank_addr &= 0xF; // 4 bits
     row_addr &= 0x7FFF; // 17 bits
     uint32_t cmd = 2 | (bank_addr << 3) | (row_addr << 7); // Activate
-    fifo_send(cmd, interval);
+    cmd_send(cmd, interval);
     uint32_t nck = 1 + interval;
     return nck;
 }
@@ -257,7 +249,7 @@ uint32_t rd(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
     bank_addr &= 0xF; // 4 bits
     col_addr &= 0x3FF; // 10 bits
     uint32_t cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
-    fifo_send(cmd, interval);
+    cmd_send(cmd, interval);
     // Receive data
     dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
     // Copy data to buffer
@@ -278,7 +270,7 @@ uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
     }
     dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
     // Send command
-    fifo_send(cmd, interval);
+    cmd_send(cmd, interval);
     uint32_t nck = 1 + interval;
     return nck;
 }
@@ -286,7 +278,7 @@ uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
 // Refresh Command
 uint32_t rf(uint32_t interval, bool strict) {
     uint32_t cmd = 5; // Refresh
-    fifo_send(cmd, interval);
+    cmd_send(cmd, interval);
     uint32_t nck = 1 + interval;
     return nck;
 }
@@ -295,14 +287,14 @@ int main(int argc, char *argv[]) {
     if (setup_hardware() != 0) return -1;
     printf("Hardware mapped successfully.\n");
 
-    volatile uint8_t *ctrl_base = (volatile uint8_t *)fifo_ctrl_vptr;
-
-    printf("FIFO size: %d\n", REG_READ(ctrl_base + REG_TDFV));
+    volatile uint32_t *bridge_base = (volatile uint32_t *)bridge_vptr;
+    // Write data (Full interface) -> burst transfer!
+    // Command
+    bridge_base[0] = 0;
+    bridge_base[1] = 0;
 
     pre(0, 0, 0, 9, 0);
-    // act(0, 0, 0, 9, 0);
-
-    printf("FIFO size: %d\n", REG_READ(ctrl_base + REG_TDFV));
+    act(0, 0, 0, 9, 0);
 
     cleanup_hardware();
 

@@ -11,8 +11,6 @@
 #define AXI_DMA_0_SIZE     0x00010000 // 64KB
 #define AXI_BRIDGE_BASE    0xB0000000
 #define AXI_BRIDGE_SIZE    0x00010000 // 64KB (NOTE: Mapped memory size, not FIFO size)
-// #define AXI_FIFO_DATA_BASE 0xB0010000
-// #define AXI_FIFO_DATA_SIZE 0x00010000 // 64KB (NOTE: Mapped memory size for MMIO, not FIFO size)
 
 // DMA Register Offsets
 #define MM2S_DMACR      0x00 // Control
@@ -39,6 +37,7 @@
 #define REG_READ(addr)       (*(volatile uint32_t *)(addr))
 
 int mem_fd;
+int bridge_fd;
 void *dma0_vptr;
 void *bridge_vptr;
 int udmabuf_fd;
@@ -56,9 +55,13 @@ static void cleanup_mem_mappings(void) {
         close(udmabuf_fd);
         udmabuf_fd = -1;
     }
-    if (bridge_vptr != NULL && bridge_vptr != MAP_FAILED) {
+    if (bridge_vptr != NULL) {
         munmap(bridge_vptr, AXI_BRIDGE_SIZE);
         bridge_vptr = NULL;
+    }
+    if (bridge_fd >= 0) {
+        close(bridge_fd);
+        bridge_fd = -1;
     }
     if (dma0_vptr != NULL && dma0_vptr != MAP_FAILED) {
         munmap(dma0_vptr, AXI_DMA_0_SIZE);
@@ -97,6 +100,7 @@ static int read_sysfs_attr(const char *path, const char *format, void *value) {
 int setup_hardware() {
     // Initialize file descriptors to invalid values
     mem_fd = -1;
+    bridge_fd = -1;
     udmabuf_fd = -1;
     dma0_vptr = NULL;
     bridge_vptr = NULL;
@@ -104,6 +108,13 @@ int setup_hardware() {
     // Open /dev/mem
     if ((mem_fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
         perror("Failed to open /dev/mem");
+        return -1;
+    }
+    // Open /dev/bridge
+    if ((bridge_fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
+        perror("Failed to open /dev/mem");
+    // if ((bridge_fd = open("/dev/bridge_wc", O_RDWR | O_SYNC)) == -1) {
+        // perror("Failed to open /dev/bridge_wc");
         return -1;
     }
     // Map DMA 0
@@ -114,7 +125,7 @@ int setup_hardware() {
         return -1;
     }
     // Map Bridge
-    bridge_vptr = mmap(NULL, AXI_BRIDGE_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, AXI_BRIDGE_BASE);
+    bridge_vptr = mmap(NULL, AXI_BRIDGE_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, bridge_fd, AXI_BRIDGE_BASE);
     if (bridge_vptr == MAP_FAILED) {
         perror("Failed to map Bridge");
         cleanup_mem_mappings();
@@ -180,34 +191,33 @@ void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     while (!(REG_READ(base + S2MM_DMASR) & 0x02));
 }
 
-// // FIFO Send (64-bit)
-// void fifo_send_64bit(uint32_t data, uint32_t interval) {
-//     volatile uint8_t *ctrl_base = (volatile uint8_t *)fifo_ctrl_vptr;
-//     volatile uint64_t *data_base = (volatile uint64_t *)fifo_data_vptr;
-//     // Pack data(32bit) + interval*NOP(32bit) into 64bit words (2x32bit per 64bit)
-//     uint32_t num_64bit_words = (1 + interval + 1) / 2; // ceil((1+interval)/2)
-//     uint32_t packet_len_bytes = 8 * num_64bit_words;
-//     if (packet_len_bytes > 8*AXI_FIFO_DATA_SIZE) {
-//         fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
-//         exit(1);
-//     }
-//     // Check for free space (Lite interface)
-//     while (REG_READ(ctrl_base + REG_TDFV) < num_64bit_words);
-//     // Write data (Full interface) -> burst transfer!
-//     // First 64bit: data(lower 32bit) + first NOP(upper 32bit)
-//     data_base[0] = ((uint64_t)0 << 32) | data;
-//     // Remaining NOPs packed 2 per 64bit word (all NOPs are 0)
-//     // Loop unrolling and NEON can be used for further speedup
-//     for (int i = 1; i < num_64bit_words; i++) {
-//         data_base[0] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
-//     }
-//     // Trigger transmission (Lite interface)
-//     // When this is written, the data in the buffer is output as a stream.
-//     REG_WRITE(ctrl_base + REG_TLR, packet_len_bytes);
-// }
+// Command Send (64-bit)
+void cmd_send_64bit(uint32_t data, uint32_t interval) {
+    // Pack data(32bit) + interval*NOP(32bit) into 64bit words (2x32bit per 64bit)
+    uint32_t num_64bit_words = (1 + interval + 1) / 2; // ceil((1+interval)/2)
+    uint32_t packet_len_bytes = 8*num_64bit_words;
+    if (packet_len_bytes > AXI_BRIDGE_SIZE) {
+        fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
+        exit(1);
+    }
+    volatile uint64_t *bridge_base = (volatile uint64_t *)bridge_vptr;
+    // Write data (Full interface) -> burst transfer!
+    // First 64bit: data(lower 32bit) + first NOP(upper 32bit)
+    bridge_base[0] = ((uint64_t)0 << 32) | data;
+    // Remaining NOPs packed 2 per 64bit word (all NOPs are 0)
+    // Loop unrolling and NEON can be used for further speedup
+    for (int i = 1; i < num_64bit_words+1; i++) {
+        bridge_base[i] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
+    }
+}
 
 // Command Send (32-bit)
 void cmd_send_32bit(uint32_t cmd, uint32_t interval) {
+    uint32_t packet_len_bytes = 4*(1 + interval);
+    if (packet_len_bytes > AXI_BRIDGE_SIZE) {
+        fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
+        exit(1);
+    }
     volatile uint32_t *bridge_base = (volatile uint32_t *)bridge_vptr;
     // Write data (Full interface) -> burst transfer!
     // Command
@@ -215,14 +225,14 @@ void cmd_send_32bit(uint32_t cmd, uint32_t interval) {
     // Interval (NOP)
     // Loop unrolling and NEON can be used for further speedup
     for (int i = 1; i < interval+1; i++) {
-        bridge_base[i] = 0; 
+        bridge_base[i] = 0;
     }
 }
 
 // Command Send
 void cmd_send(uint32_t cmd, uint32_t interval) {
-    // fifo_send_32bit(data, interval);
-    cmd_send_32bit(cmd, interval);
+    cmd_send_64bit(cmd, interval);
+    // cmd_send_32bit(cmd, interval);
 }
 
 // Precharge Command
