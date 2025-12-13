@@ -13,7 +13,7 @@ int main(int argc, char *argv[]) {
 
     uint8_t n_ranks = 1;
     uint8_t n_banks = 16;
-    uint32_t n_rows = 256;
+    uint32_t n_rows = 65536;
 
     /*** Start operations ***/
     printf("Starting operations...\n");
