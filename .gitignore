@@ -1,6 +1,8 @@
 bin/
 build/
 vivado/
+vivado2/
+vivado3/
 
 # Project files (re-creatable)
 *.xpr

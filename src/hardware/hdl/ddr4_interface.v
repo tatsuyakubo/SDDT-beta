@@ -1,7 +1,7 @@
 `include "parameters.vh"
 `include "project.vh"
 
-module phy_wrapper #(
+module ddr4_interface #(
   parameter DQ_WIDTH = `DQ_WIDTH,
   parameter CKE_WIDTH = `CKE_WIDTH,
   parameter CS_WIDTH = `CS_WIDTH,
@@ -81,15 +81,6 @@ module phy_wrapper #(
   output wire [511:0]                 rdData,
   output wire [0:0]                   rdDataEn,
   
-  // DLL toggler interface
-  input  wire                         dllt_active,
-  input  wire [7:0]                   dllt_mc_ACT_n,
-  input  wire [135:0]                 dllt_mc_ADR,
-  input  wire [15:0]                  dllt_mc_BA,
-  input  wire [15:0]                  dllt_mc_BG,
-  input  wire [7:0]                   dllt_mc_CKE,
-  input  wire [7:0]                   dllt_mc_CS_n,
-  
   // For DLL toggler clock mux
   `ifdef ENABLE_DLL_TOGGLER
   output wire                         ddr4_ui_clk,
@@ -129,16 +120,90 @@ module phy_wrapper #(
   wire c0_ddr4_clk_internal;
   wire c0_ddr4_rst_internal;
   wire c0_init_calib_complete_internal;
+  wire c0_ddr4_clk_mux;
+  wire [7:0]   dllt_mc_ACT_n;
+  wire [135:0] dllt_mc_ADR;
+  wire [15:0]  dllt_mc_BA;
+  wire [15:0]  dllt_mc_BG;
+  wire [7:0]   dllt_mc_CKE;
+  wire [7:0]   dllt_mc_CS_n;
+  wire         clk_sel;
+  wire         dllt_done;
+  wire         toggle_dll;
+  wire         dllt_active;
   
   `ifdef ENABLE_DLL_TOGGLER
   wire ddr4_ui_clk_internal;
   wire c0_ddr4_dll_off_clk_internal;
   assign ddr4_ui_clk = ddr4_ui_clk_internal;
   assign c0_ddr4_dll_off_clk = c0_ddr4_dll_off_clk_internal;
+  
+  // DLL toggler (internalized)
+  reg dllt_active_reg = 1'b0;
+  assign dllt_active = dllt_active_reg;
+
+`ifdef DLL_TOGGLE_ON_RESET
+  reg toggle_dll_pulse = 1'b1;
+  always @(posedge c0_ddr4_clk_mux) begin
+    if (toggle_dll_pulse) begin
+      toggle_dll_pulse <= 1'b0;
+    end
+  end
+  assign toggle_dll = toggle_dll_pulse;
+`else
+  assign toggle_dll = 1'b0;
+`endif
+
+  always @(posedge c0_ddr4_clk_mux) begin
+    if (toggle_dll) begin
+      dllt_active_reg <= ~dllt_active_reg;
+    end
+    if (dllt_done) begin
+      dllt_active_reg <= ~dllt_active_reg;
+    end
+  end
+
+  dll_toggler dllt (
+    .clk          (c0_ddr4_clk_mux),
+    .rst          (c0_ddr4_rst_internal || user_rst || ~c0_init_calib_complete_internal),
+    .toggle_valid (toggle_dll),
+    .mc_ACT_n     (dllt_mc_ACT_n),
+    .mc_ADR       (dllt_mc_ADR),
+    .mc_BA        (dllt_mc_BA),
+    .mc_BG        (dllt_mc_BG),
+    .mc_CS_n      (dllt_mc_CS_n),
+    .mc_CKE       (dllt_mc_CKE),
+    .clk_sel      (clk_sel),
+    .dllt_done    (dllt_done)
+  );
+
+  BUFGMUX #(.CLK_SEL_TYPE("SYNC"))
+  BUFGMUX_inst (
+    .O  (c0_ddr4_clk_mux),
+    .I0 (ddr4_ui_clk_internal),
+    .I1 (c0_ddr4_dll_off_clk_internal),
+    .S  (clk_sel)
+  );
+  `else
+  assign dllt_active      = 1'b0;
+  assign dllt_mc_ACT_n    = 8'd0;
+  assign dllt_mc_ADR      = 136'd0;
+  assign dllt_mc_BA       = 16'd0;
+  assign dllt_mc_BG       = 16'd0;
+  assign dllt_mc_CKE      = 8'd0;
+  assign dllt_mc_CS_n     = 8'd0;
+  assign clk_sel          = 1'b0;
+  assign dllt_done        = 1'b0;
+  assign toggle_dll       = 1'b0;
+  assign c0_ddr4_clk_mux  = c0_ddr4_clk_internal;
   `endif
   
   // Output assignments
+`ifdef ENABLE_DLL_TOGGLER
+  assign c0_ddr4_clk = c0_ddr4_clk_mux;
+`else
   assign c0_ddr4_clk = c0_ddr4_clk_internal;
+`endif
   assign c0_ddr4_rst = c0_ddr4_rst_internal;
   assign c0_init_calib_complete = c0_init_calib_complete_internal;
 
