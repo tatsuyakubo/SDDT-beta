@@ -18,42 +18,36 @@ module axi4_read_data(
     output [15:0] latest_data_monitor
 );
 
-    // TLASTの制御:
-    // データストリーム転送の場合、TLASTは「転送の最後」を示すべきですが、
-    // ここでは単純化のため常に1にします（DMAが転送完了を検出できるように）。
-    // ただし、実際にはDMAはLENGTHで指定されたバイト数を受け取れば完了します。
-    wire s_axis_tlast = 1'b1;  // 常に1に設定（各転送が最後のデータであることを示す）
+    // TLAST control:
+    // For data stream transfers, TLAST should indicate "the last transfer" in the stream.
+    // Here, we simplify by always setting TLAST to 1 so that the DMA can detect transfer completion.
+    // In practice, the DMA finishes when it receives the number of bytes specified by LENGTH.
+    wire s_axis_tlast = 1'b1;  // Always set to 1 (indicates every transfer is the last data)
 
-    // FIFOが満杯になりそうなときの警告（DDRからのデータは止められないため致命的）
+    // Warning when the FIFO is almost full (DDR data cannot be stopped due to critical error)
     wire fifo_full;
     wire fifo_overflow;
     
-    // Debug用
+    // Debug
     assign overflow_err = fifo_overflow;
     assign latest_data_monitor = M_AXIS_TDATA[15:0];
 
     // --------------------------------------------------------
     // Xilinx XPM_FIFO_AXIS Instantiation
     // --------------------------------------------------------
-    // DDRのバーストを受け止めるため、ある程度の深さ(DEPTH)が必要です。
-    // ここでは適度なサイズ(512深度)を設定していますが、BRAMリソースに応じて調整してください。
-    // 同期FIFOの場合、m_aclkとs_aclkを同じ信号に接続します。
-    
     xpm_fifo_axis #(
-        // CLOCK_DOMAINパラメータは削除（同期FIFOの場合は不要）
-        .FIFO_DEPTH(512),         // バッファ深度 (DDRバースト対策)
-        .TDATA_WIDTH(512),        // データ幅
+        .FIFO_DEPTH(512),
+        .TDATA_WIDTH(512),
         .FIFO_MEMORY_TYPE("auto"),
-        .PACKET_FIFO("false"),
-        .USE_ADV_FEATURES("1000") // overflow flag有効化
+        .PACKET_FIFO("false")
     ) axis_fifo_inst (
-        .s_aclk(clk),              // 入力側クロック
-        .s_aresetn(!rst),          // 入力側リセット（アクティブロー）
+        .s_aclk(clk),
+        .s_aresetn(!rst),
 
         // Slave Interface (Input from DDR)
         .s_axis_tdata(ddr_rd_data),
         .s_axis_tvalid(ddr_rd_valid),
-        .s_axis_tready(),          // DDR側にはReadyを返せない（無視する）
+        .s_axis_tready(),
         .s_axis_tlast(s_axis_tlast),
         .s_axis_tkeep({64{1'b1}}),
         .s_axis_tstrb({64{1'b1}}),
@@ -72,12 +66,12 @@ module axi4_read_data(
         .m_axis_tstrb(),
         .m_axis_tuser(),
         .m_axis_tid(),
-        .m_axis_tdest(),
+        .m_axis_tdest()
         
-        // Status signals
-        .prog_full_axis(),
-        .wr_data_count_axis(),
-        .rd_data_count_axis()
+        // // Status signals
+        // .prog_full_axis(),
+        // .wr_data_count_axis(),
+        // .rd_data_count_axis()
     );
 
 endmodule
