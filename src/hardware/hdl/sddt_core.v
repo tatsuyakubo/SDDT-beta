@@ -235,8 +235,8 @@ module sddt_core #(
     .rst                  (c0_ddr4_rst_i),
     
     // DDR Read Data Interface (from DDR Interface)
-    .rd_data              (rdData),
-    .rd_valid             (rdDataEn),
+    .ddr_rd_data              (rdData),
+    .ddr_rd_valid             (rdDataEn),
     
     // DDR Write Data Interface (to DDR Interface)
     .ddr_wdata            (ddr_wdata),

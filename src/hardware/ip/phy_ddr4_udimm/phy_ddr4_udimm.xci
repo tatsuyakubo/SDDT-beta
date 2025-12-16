@@ -4,7 +4,7 @@
     "xci_name": "phy_ddr4_udimm",
     "component_reference": "xilinx.com:ip:ddr4:2.2",
     "ip_revision": "24",
-    "gen_directory": "../../../../ZCU104.gen/sources_1/ip/phy_ddr4_udimm",
+    "gen_directory": "phy_ddr4_udimm.gen",
     "parameters": {
       "component_parameters": {
         "C0.ControllerType": [ { "value": "DDR4_SDRAM", "resolve_type": "user", "enabled": false, "usage": "all" } ],
@@ -305,7 +305,7 @@
         "IPCONTEXT": [ { "value": "IP_Flow" } ],
         "IPREVISION": [ { "value": "24" } ],
         "MANAGED": [ { "value": "TRUE" } ],
-        "OUTPUTDIR": [ { "value": "../../../../ZCU104.gen/sources_1/ip/phy_ddr4_udimm" } ],
+        "OUTPUTDIR": [ { "value": "phy_ddr4_udimm.gen" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "." } ],
         "SWVERSION": [ { "value": "2024.2" } ],
