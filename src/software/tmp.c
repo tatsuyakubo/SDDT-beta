@@ -11,8 +11,6 @@
 #define AXI_DMA_0_SIZE     0x00010000 // 64KB
 #define AXI_BRIDGE_BASE    0xB0000000
 #define AXI_BRIDGE_SIZE    0x00010000 // 64KB (NOTE: Mapped memory size, not FIFO size)
-// #define AXI_FIFO_DATA_BASE 0xB0010000
-// #define AXI_FIFO_DATA_SIZE 0x00010000 // 64KB (NOTE: Mapped memory size for MMIO, not FIFO size)
 
 // DMA Register Offsets
 #define MM2S_DMACR      0x00 // Control
@@ -38,13 +36,25 @@
 #define REG_WRITE(addr, val) (*(volatile uint32_t *)(addr) = (val))
 #define REG_READ(addr)       (*(volatile uint32_t *)(addr))
 
+// Timing Parameters
+// tCK = 1.5ns (666MHz)
+#define nRP    9 // tRP  = 14.16ns, nRP  = 14.16 / 1.5 = 9.44
+#define nRCD   9 // tRCD = 14.16ns, nRCD = 14.16 / 1.5 = 9.44
+#define nCCD_L 3 // tCCD_L = 6 * 0.833 = 5.0ns, nCCD_L = 5.0 / 1.5 = 3.33
+// tREFI = 7.8us
+#define nRFC 233 // tRFC = 421 * 0.833 = 350.693ns, nRFC = 350.693 / 1.5 = 233.795
+
 int mem_fd;
+int bridge_fd;
 void *dma0_vptr;
 void *bridge_vptr;
 int udmabuf_fd;
 void *udmabuf_vptr;
 unsigned int udmabuf_size;
 unsigned long udmabuf_phys_addr;
+// Bridge index tracking (for circular buffer)
+static uint32_t bridge_32bit_index = 0;
+static uint32_t bridge_64bit_index = 0;
 
 // Cleanup Memory Mappings
 static void cleanup_mem_mappings(void) {
@@ -56,9 +66,13 @@ static void cleanup_mem_mappings(void) {
         close(udmabuf_fd);
         udmabuf_fd = -1;
     }
-    if (bridge_vptr != NULL && bridge_vptr != MAP_FAILED) {
+    if (bridge_vptr != NULL) {
         munmap(bridge_vptr, AXI_BRIDGE_SIZE);
         bridge_vptr = NULL;
+    }
+    if (bridge_fd >= 0) {
+        close(bridge_fd);
+        bridge_fd = -1;
     }
     if (dma0_vptr != NULL && dma0_vptr != MAP_FAILED) {
         munmap(dma0_vptr, AXI_DMA_0_SIZE);
@@ -97,6 +111,7 @@ static int read_sysfs_attr(const char *path, const char *format, void *value) {
 int setup_hardware() {
     // Initialize file descriptors to invalid values
     mem_fd = -1;
+    bridge_fd = -1;
     udmabuf_fd = -1;
     dma0_vptr = NULL;
     bridge_vptr = NULL;
@@ -104,6 +119,13 @@ int setup_hardware() {
     // Open /dev/mem
     if ((mem_fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
         perror("Failed to open /dev/mem");
+        return -1;
+    }
+    // Open /dev/bridge
+    if ((bridge_fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
+        perror("Failed to open /dev/mem");
+    // if ((bridge_fd = open("/dev/bridge_wc", O_RDWR | O_SYNC)) == -1) {
+    //     perror("Failed to open /dev/bridge_wc");
         return -1;
     }
     // Map DMA 0
@@ -114,7 +136,7 @@ int setup_hardware() {
         return -1;
     }
     // Map Bridge
-    bridge_vptr = mmap(NULL, AXI_BRIDGE_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, AXI_BRIDGE_BASE);
+    bridge_vptr = mmap(NULL, AXI_BRIDGE_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, bridge_fd, AXI_BRIDGE_BASE);
     if (bridge_vptr == MAP_FAILED) {
         perror("Failed to map Bridge");
         cleanup_mem_mappings();
@@ -180,48 +202,65 @@ void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     while (!(REG_READ(base + S2MM_DMASR) & 0x02));
 }
 
-// // FIFO Send (64-bit)
-// void fifo_send_64bit(uint32_t data, uint32_t interval) {
-//     volatile uint8_t *ctrl_base = (volatile uint8_t *)fifo_ctrl_vptr;
-//     volatile uint64_t *data_base = (volatile uint64_t *)fifo_data_vptr;
-//     // Pack data(32bit) + interval*NOP(32bit) into 64bit words (2x32bit per 64bit)
-//     uint32_t num_64bit_words = (1 + interval + 1) / 2; // ceil((1+interval)/2)
-//     uint32_t packet_len_bytes = 8 * num_64bit_words;
-//     if (packet_len_bytes > 8*AXI_FIFO_DATA_SIZE) {
-//         fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
-//         exit(1);
-//     }
-//     // Check for free space (Lite interface)
-//     while (REG_READ(ctrl_base + REG_TDFV) < num_64bit_words);
-//     // Write data (Full interface) -> burst transfer!
-//     // First 64bit: data(lower 32bit) + first NOP(upper 32bit)
-//     data_base[0] = ((uint64_t)0 << 32) | data;
-//     // Remaining NOPs packed 2 per 64bit word (all NOPs are 0)
-//     // Loop unrolling and NEON can be used for further speedup
-//     for (int i = 1; i < num_64bit_words; i++) {
-//         data_base[0] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
-//     }
-//     // Trigger transmission (Lite interface)
-//     // When this is written, the data in the buffer is output as a stream.
-//     REG_WRITE(ctrl_base + REG_TLR, packet_len_bytes);
-// }
+// Command Send (64-bit)
+void cmd_send_64bit(uint32_t data, uint32_t interval) {
+    // Pack data(32bit) + interval*NOP(32bit) into 64bit words (2x32bit per 64bit)
+    uint32_t num_64bit_words = (1 + interval + 1) / 2; // ceil((1+interval)/2)
+    uint32_t packet_len_bytes = 8*num_64bit_words;
+    if (packet_len_bytes > AXI_BRIDGE_SIZE) {
+        fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
+        exit(1);
+    }
+    volatile uint64_t *bridge_base = (volatile uint64_t *)bridge_vptr;
+    uint32_t max_index = AXI_BRIDGE_SIZE / 8; // Maximum index for 64-bit words
+    // Write data (Full interface) -> burst transfer!
+    // First 64bit: data(lower 32bit) + first NOP(upper 32bit)
+    bridge_base[bridge_64bit_index] = ((uint64_t)0 << 32) | data;
+    bridge_64bit_index++;
+    if (bridge_64bit_index >= max_index) {
+        bridge_64bit_index = 0;
+    }
+    // Remaining NOPs packed 2 per 64bit word (all NOPs are 0)
+    // Loop unrolling and NEON can be used for further speedup
+    for (int i = 1; i < num_64bit_words+1; i++) {
+        bridge_base[bridge_64bit_index] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
+        bridge_64bit_index++;
+        if (bridge_64bit_index >= max_index) {
+            bridge_64bit_index = 0;
+        }
+    }
+}
 
 // Command Send (32-bit)
 void cmd_send_32bit(uint32_t cmd, uint32_t interval) {
+    uint32_t packet_len_bytes = 4*(1 + interval);
+    if (packet_len_bytes > AXI_BRIDGE_SIZE) {
+        fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
+        exit(1);
+    }
     volatile uint32_t *bridge_base = (volatile uint32_t *)bridge_vptr;
+    uint32_t max_index = AXI_BRIDGE_SIZE / 4; // Maximum index for 32-bit words
     // Write data (Full interface) -> burst transfer!
     // Command
-    bridge_base[0] = cmd;
+    bridge_base[bridge_32bit_index] = cmd;
+    bridge_32bit_index++;
+    if (bridge_32bit_index >= max_index) {
+        bridge_32bit_index = 0;
+    }
     // Interval (NOP)
     // Loop unrolling and NEON can be used for further speedup
     for (int i = 1; i < interval+1; i++) {
-        bridge_base[i] = 0; 
+        bridge_base[bridge_32bit_index] = 0;
+        bridge_32bit_index++;
+        if (bridge_32bit_index >= max_index) {
+            bridge_32bit_index = 0;
+        }
     }
 }
 
 // Command Send
 void cmd_send(uint32_t cmd, uint32_t interval) {
-    // fifo_send_32bit(data, interval);
+    // cmd_send_64bit(cmd, interval);
     cmd_send_32bit(cmd, interval);
 }
 
@@ -287,14 +326,114 @@ int main(int argc, char *argv[]) {
     if (setup_hardware() != 0) return -1;
     printf("Hardware mapped successfully.\n");
 
-    volatile uint32_t *bridge_base = (volatile uint32_t *)bridge_vptr;
-    // Write data (Full interface) -> burst transfer!
-    // Command
-    bridge_base[0] = 0;
-    bridge_base[1] = 0;
+    int bank_addr = 0;
+    int row_addr = 0;
+    int col_addr = 0;
+    uint32_t cmd = 0;
 
-    pre(0, 0, 0, 9, 0);
-    act(0, 0, 0, 9, 0);
+    pre(bank_addr, 0, 0, 9, 0);
+    act(bank_addr, row_addr, 0, 9, 0);
+
+    // Set data1
+    uint32_t write_buffer1[16] = {1, 2};
+    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+    for (int i = 0; i < 16; i++) {
+        ptr[i] = write_buffer1[i];
+    }
+    dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+    // Set data2
+    uint32_t write_buffer2[16] = {3, 4};
+    for (int i = 0; i < 16; i++) {
+        ptr[i] = write_buffer2[i];
+    }
+    dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+    // Set data3
+    uint32_t write_buffer3[16] = {5, 6};
+    for (int i = 0; i < 16; i++) {
+        ptr[i] = write_buffer3[i];
+    }
+    dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+
+    col_addr = 0;
+    cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
+    // Send command
+    cmd_send(cmd, 9);
+
+    col_addr = 64;
+    cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
+    // Send command
+    cmd_send(cmd, 9);
+
+    col_addr = 32;
+    cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
+    // Send command
+    cmd_send(cmd, 9);
+
+    pre(bank_addr, 0, 0, 9, 0);
+    act(bank_addr, row_addr, 0, 9, 0);
+
+    printf("Here4\n");
+ 
+    // Read col = 0
+    bank_addr = 0;
+    col_addr = 0;
+    bank_addr &= 0xF; // 4 bits
+    col_addr &= 0x3FF; // 10 bits
+    cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
+    cmd_send(cmd, 9);
+
+    // Read col = 64
+    col_addr = 64;
+    cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
+    cmd_send(cmd, 9);
+
+    // Read col = 32
+    col_addr = 32;
+    cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
+    cmd_send(cmd, 9);
+
+    printf("Here5\n");
+
+
+    // Implementation A
+    uint32_t read_buffer[16];
+    // Receive data
+    dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
+    // Copy data to buffer
+    memcpy(read_buffer, (uint32_t *)udmabuf_vptr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+    for (int i = 0; i < 16; i++) {
+        printf("%08x ", read_buffer[i]);
+    }
+    printf("\n");
+
+    dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
+    memcpy(read_buffer, (uint32_t *)udmabuf_vptr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+    for (int i = 0; i < 16; i++) {
+        printf("%08x ", read_buffer[i]);
+    }
+    printf("\n");
+
+    dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
+    memcpy(read_buffer, (uint32_t *)udmabuf_vptr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+    for (int i = 0; i < 16; i++) {
+        printf("%08x ", read_buffer[i]);
+    }
+    printf("\n");
+
+    // // Implemenatation B
+    // int n_cols = 2;
+    // uint32_t read_buffer[n_cols*16];
+    // // Receive data
+    // dma_recv(dma0_vptr, udmabuf_phys_addr, n_cols*16 * sizeof(uint32_t)); // 512 bits
+    // // Copy data to buffer
+    // memcpy(read_buffer, (uint32_t *)udmabuf_vptr, n_cols*16 * sizeof(uint32_t)); // 512 bits, 64 bytes * n_cols
+    // for (int i = 0; i < n_cols; i++) {
+    //     for (int i = 0; i < 16; i++) {
+    //         printf("%08x ", read_buffer[i]);
+    //     }
+    //     printf("\n");
+    // }
+
 
     cleanup_hardware();
 

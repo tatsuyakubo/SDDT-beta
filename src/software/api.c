@@ -36,6 +36,14 @@
 #define REG_WRITE(addr, val) (*(volatile uint32_t *)(addr) = (val))
 #define REG_READ(addr)       (*(volatile uint32_t *)(addr))
 
+// Timing Parameters
+// tCK = 1.5ns (666MHz)
+#define nRP    9 // tRP  = 14.16ns, nRP  = 14.16 / 1.5 = 9.44
+#define nRCD   9 // tRCD = 14.16ns, nRCD = 14.16 / 1.5 = 9.44
+#define nCCD_L 3 // tCCD_L = 6 * 0.833 = 5.0ns, nCCD_L = 5.0 / 1.5 = 3.33
+// tREFI = 7.8us
+#define nRFC 233 // tRFC = 421 * 0.833 = 350.693ns, nRFC = 350.693 / 1.5 = 233.795
+
 int mem_fd;
 int bridge_fd;
 void *dma0_vptr;
@@ -44,6 +52,9 @@ int udmabuf_fd;
 void *udmabuf_vptr;
 unsigned int udmabuf_size;
 unsigned long udmabuf_phys_addr;
+// Bridge index tracking (for circular buffer)
+static uint32_t bridge_32bit_index = 0;
+static uint32_t bridge_64bit_index = 0;
 
 // Cleanup Memory Mappings
 static void cleanup_mem_mappings(void) {
@@ -114,7 +125,7 @@ int setup_hardware() {
     if ((bridge_fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
         perror("Failed to open /dev/mem");
     // if ((bridge_fd = open("/dev/bridge_wc", O_RDWR | O_SYNC)) == -1) {
-        // perror("Failed to open /dev/bridge_wc");
+    //     perror("Failed to open /dev/bridge_wc");
         return -1;
     }
     // Map DMA 0
@@ -201,13 +212,22 @@ void cmd_send_64bit(uint32_t data, uint32_t interval) {
         exit(1);
     }
     volatile uint64_t *bridge_base = (volatile uint64_t *)bridge_vptr;
+    uint32_t max_index = AXI_BRIDGE_SIZE / 8; // Maximum index for 64-bit words
     // Write data (Full interface) -> burst transfer!
     // First 64bit: data(lower 32bit) + first NOP(upper 32bit)
-    bridge_base[0] = ((uint64_t)0 << 32) | data;
+    bridge_base[bridge_64bit_index] = ((uint64_t)0 << 32) | data;
+    bridge_64bit_index++;
+    if (bridge_64bit_index >= max_index) {
+        bridge_64bit_index = 0;
+    }
     // Remaining NOPs packed 2 per 64bit word (all NOPs are 0)
     // Loop unrolling and NEON can be used for further speedup
     for (int i = 1; i < num_64bit_words+1; i++) {
-        bridge_base[i] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
+        bridge_base[bridge_64bit_index] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
+        bridge_64bit_index++;
+        if (bridge_64bit_index >= max_index) {
+            bridge_64bit_index = 0;
+        }
     }
 }
 
@@ -219,20 +239,29 @@ void cmd_send_32bit(uint32_t cmd, uint32_t interval) {
         exit(1);
     }
     volatile uint32_t *bridge_base = (volatile uint32_t *)bridge_vptr;
+    uint32_t max_index = AXI_BRIDGE_SIZE / 4; // Maximum index for 32-bit words
     // Write data (Full interface) -> burst transfer!
     // Command
-    bridge_base[0] = cmd;
+    bridge_base[bridge_32bit_index] = cmd;
+    bridge_32bit_index++;
+    if (bridge_32bit_index >= max_index) {
+        bridge_32bit_index = 0;
+    }
     // Interval (NOP)
     // Loop unrolling and NEON can be used for further speedup
     for (int i = 1; i < interval+1; i++) {
-        bridge_base[i] = 0;
+        bridge_base[bridge_32bit_index] = 0;
+        bridge_32bit_index++;
+        if (bridge_32bit_index >= max_index) {
+            bridge_32bit_index = 0;
+        }
     }
 }
 
 // Command Send
 void cmd_send(uint32_t cmd, uint32_t interval) {
-    cmd_send_64bit(cmd, interval);
-    // cmd_send_32bit(cmd, interval);
+    // cmd_send_64bit(cmd, interval);
+    cmd_send_32bit(cmd, interval);
 }
 
 // Precharge Command
@@ -290,5 +319,53 @@ uint32_t rf(uint32_t interval, bool strict) {
     uint32_t cmd = 5; // Refresh
     cmd_send(cmd, interval);
     uint32_t nck = 1 + interval;
+    return nck;
+}
+
+// Write Row
+uint32_t write_row(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr) {
+    uint32_t nck = 0;
+    nck += pre(bank_addr, rank_addr, false, nRP, false);
+    nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
+    for (int i = 0; i < 128; i++) {
+        nck += wr(data_buf+i*16, bank_addr, i*8, nCCD_L, false);
+    }
+    return nck;
+}
+
+// Read Row
+uint32_t read_row(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr) {
+    uint32_t nck = 0;
+    nck += pre(bank_addr, rank_addr, false, nRP, false);
+    nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
+    for (int i = 0; i < 128; i++) {
+        nck += rd(data_buf+i*16, bank_addr, i*8, nCCD_L, false);
+    }
+    return nck;
+}
+
+// // Read Row Batch
+// uint32_t read_row_batch(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr) {
+//     uint32_t nck = 0;
+//     nck += pre(bank_addr, rank_addr, false, nRP, false);
+//     nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
+//     for (int i = 0; i < 128; i++) {
+//         uint32_t col_addr = i*8 & 0x3FF;
+//         uint32_t rd_cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
+//         cmd_send(rd_cmd, nCCD_L);
+//         nck += 1 + nCCD_L;
+//     }
+//     // Receive data
+//     dma_recv(dma0_vptr, udmabuf_phys_addr, 128 * 16 * sizeof(uint32_t)); // 512 bits * 128
+//     // Copy data to buffer
+//     memcpy(data_buf, (uint32_t *)udmabuf_vptr, 128 * 16 * sizeof(uint32_t)); // 512 bits * 128, 64 bytes * 128
+//     return nck;
+// }
+
+// All Bank Refresh
+uint32_t all_bank_refresh(uint8_t rank_addr) {
+    uint32_t nck = 0;
+    nck += pre(0, rank_addr, true, nRP, false); // precharge all banks
+    nck += rf(nRFC, false); // refresh
     return nck;
 }
