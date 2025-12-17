@@ -9,12 +9,12 @@ module axi4_instr #(
 (
     input wire clk,
     input wire rst,
+
     // AXI -> Instr
     input wire [127:0] S_AXIS_TDATA,
     input wire S_AXIS_TVALID,
     output wire S_AXIS_TREADY,
-    // Debug
-    output wire [2:0] latest_instr_id,
+    
     // Instr -> DDR4_Adapter
     output reg [3:0]                ddr_write,
     output reg [3:0]                ddr_read,
@@ -29,7 +29,10 @@ module axi4_instr #(
     output reg [4*BG_WIDTH-1:0]     ddr_bg, 
     output reg [4*BANK_WIDTH-1:0]   ddr_bank,
     output reg [4*COL_WIDTH-1:0]    ddr_col,
-    output reg [4*ROW_WIDTH-1:0]    ddr_row
+    output reg [4*ROW_WIDTH-1:0]    ddr_row,
+
+    // Debug
+    output wire [2:0] latest_instr_id
 );
 
     // ローカルパラメータで出力バス幅を計算

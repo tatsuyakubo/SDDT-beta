@@ -1,0 +1,51 @@
+module axi4_write_fifo(
+    input clk,
+    input rst,
+
+    input [511:0] S_AXIS_TDATA,
+    input S_AXIS_TVALID,
+    output S_AXIS_TREADY,
+
+    output [511:0] M_AXIS_TDATA,
+    output M_AXIS_TVALID,
+    input M_AXIS_TREADY
+);
+    
+    // --------------------------------------------------------
+    // Xilinx XPM_FIFO_AXIS Instantiation
+    // --------------------------------------------------------
+    xpm_fifo_axis #(
+        .FIFO_DEPTH(512),
+        .TDATA_WIDTH(512),
+        .FIFO_MEMORY_TYPE("auto"),
+        .PACKET_FIFO("false")
+    ) axis_fifo_inst (
+        .s_aclk(clk),
+        .s_aresetn(!rst),
+
+        // Slave Interface (Input)
+        .s_axis_tdata(S_AXIS_TDATA),
+        .s_axis_tvalid(S_AXIS_TVALID),
+        .s_axis_tready(S_AXIS_TREADY),
+        .s_axis_tlast(1'b1),
+        .s_axis_tkeep({64{1'b1}}),
+        .s_axis_tstrb({64{1'b1}}),
+        .s_axis_tuser(1'b0),
+        .s_axis_tid(1'b0),
+        .s_axis_tdest(1'b0),
+
+        // Master Interface (Output)
+        .m_axis_tdata(M_AXIS_TDATA),
+        .m_axis_tvalid(M_AXIS_TVALID),
+        .m_axis_tready(M_AXIS_TREADY),
+        .m_axis_tlast(),
+        .m_axis_tkeep(),
+        
+        // Unused outputs
+        .m_axis_tstrb(),
+        .m_axis_tuser(),
+        .m_axis_tid(),
+        .m_axis_tdest()
+    );
+
+endmodule
