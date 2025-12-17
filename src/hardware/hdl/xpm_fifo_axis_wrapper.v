@@ -1,4 +1,7 @@
-module axi4_write_fifo(
+module xpm_fifo_axis_wrapper #(
+    parameter FIFO_DEPTH = 512,
+    parameter TDATA_WIDTH = 512
+)(
     input clk,
     input rst,
 
@@ -15,8 +18,8 @@ module axi4_write_fifo(
     // Xilinx XPM_FIFO_AXIS Instantiation
     // --------------------------------------------------------
     xpm_fifo_axis #(
-        .FIFO_DEPTH(512),
-        .TDATA_WIDTH(512),
+        .FIFO_DEPTH(FIFO_DEPTH),
+        .TDATA_WIDTH(TDATA_WIDTH),
         .FIFO_MEMORY_TYPE("auto"),
         .PACKET_FIFO("false")
     ) axis_fifo_inst (
