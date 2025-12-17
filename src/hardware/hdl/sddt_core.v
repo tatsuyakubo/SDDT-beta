@@ -87,7 +87,9 @@ module sddt_core #(
   // =========================================================================
   // AXI Stream H2C Interface 1 (Host to Card - Instruction Input from DMA MM2S_1)
   // =========================================================================
-  input  wire [511:0]                 S_AXIS_H2C_1_tdata,
+  input  wire [127:0]                 S_AXIS_H2C_1_tdata,
+  input  wire [15:0]                  S_AXIS_H2C_1_tkeep,
+  input  wire                         S_AXIS_H2C_1_tlast,
   input  wire                         S_AXIS_H2C_1_tvalid,
   output wire                         S_AXIS_H2C_1_tready,
   
@@ -271,6 +273,8 @@ module sddt_core #(
     
     // AXI Stream H2C Interface 1 (from DMA MM2S_1 - Instructions)
     .S_AXIS_H2C_1_tdata   (S_AXIS_H2C_1_tdata),
+    .S_AXIS_H2C_1_tkeep   (S_AXIS_H2C_1_tkeep),
+    .S_AXIS_H2C_1_tlast   (S_AXIS_H2C_1_tlast),
     .S_AXIS_H2C_1_tvalid  (S_AXIS_H2C_1_tvalid),
     .S_AXIS_H2C_1_tready  (S_AXIS_H2C_1_tready),
     

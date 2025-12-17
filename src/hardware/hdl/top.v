@@ -95,7 +95,9 @@ module top #(parameter tCK = 1500, SIM = "false")
   wire [31:0]  axi_gpio_in;
   wire [31:0]  axi_gpio_in2;
   wire [31:0]  axi_gpio_out;
-  wire [511:0] M_AXIS_MM2S_1_tdata;
+  wire [127:0] M_AXIS_MM2S_1_tdata;
+  wire [15:0]  M_AXIS_MM2S_1_tkeep;
+  wire         M_AXIS_MM2S_1_tlast;
   wire         M_AXIS_MM2S_1_tready;
   wire         M_AXIS_MM2S_1_tvalid;
 
@@ -179,6 +181,8 @@ module top #(parameter tCK = 1500, SIM = "false")
     
     // AXI Stream H2C Interface 1 (from DMA MM2S_1 - Instructions)
     .S_AXIS_H2C_1_tdata   (M_AXIS_MM2S_1_tdata),
+    .S_AXIS_H2C_1_tkeep   (M_AXIS_MM2S_1_tkeep),
+    .S_AXIS_H2C_1_tlast   (M_AXIS_MM2S_1_tlast),
     .S_AXIS_H2C_1_tvalid  (M_AXIS_MM2S_1_tvalid),
     .S_AXIS_H2C_1_tready  (M_AXIS_MM2S_1_tready),
     
@@ -202,6 +206,8 @@ module top #(parameter tCK = 1500, SIM = "false")
     .M_AXIS_MM2S_0_tready (M_AXIS_MM2S_0_tready),
     .M_AXIS_MM2S_0_tvalid (M_AXIS_MM2S_0_tvalid),
     .M_AXIS_MM2S_1_tdata  (M_AXIS_MM2S_1_tdata),
+    .M_AXIS_MM2S_1_tkeep  (M_AXIS_MM2S_1_tkeep),
+    .M_AXIS_MM2S_1_tlast  (M_AXIS_MM2S_1_tlast),
     .M_AXIS_MM2S_1_tready (M_AXIS_MM2S_1_tready),
     .M_AXIS_MM2S_1_tvalid (M_AXIS_MM2S_1_tvalid),
     .S_AXIS_S2MM_0_tdata  (S_AXIS_S2MM_0_tdata),
