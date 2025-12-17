@@ -6,7 +6,7 @@ create_vivado_project:
 	    -source scripts/vivado.tcl \
 	    -tclargs \
 			--origin_dir ./scripts \
-			--project_name vivado2
+			--project_name vivado1
 
 copy_vivado_outputs:
 	mkdir -p ./bin

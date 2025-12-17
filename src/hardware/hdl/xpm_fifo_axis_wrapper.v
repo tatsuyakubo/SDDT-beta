@@ -5,11 +5,11 @@ module xpm_fifo_axis_wrapper #(
     input clk,
     input rst,
 
-    input [511:0] S_AXIS_TDATA,
+    input [TDATA_WIDTH-1:0] S_AXIS_TDATA,
     input S_AXIS_TVALID,
     output S_AXIS_TREADY,
 
-    output [511:0] M_AXIS_TDATA,
+    output [TDATA_WIDTH-1:0] M_AXIS_TDATA,
     output M_AXIS_TVALID,
     input M_AXIS_TREADY
 );
@@ -31,8 +31,8 @@ module xpm_fifo_axis_wrapper #(
         .s_axis_tvalid(S_AXIS_TVALID),
         .s_axis_tready(S_AXIS_TREADY),
         .s_axis_tlast(1'b1),
-        .s_axis_tkeep({64{1'b1}}),
-        .s_axis_tstrb({64{1'b1}}),
+        .s_axis_tkeep({TDATA_WIDTH/8{1'b1}}),
+        .s_axis_tstrb({TDATA_WIDTH/8{1'b1}}),
         .s_axis_tuser(1'b0),
         .s_axis_tid(1'b0),
         .s_axis_tdest(1'b0),
