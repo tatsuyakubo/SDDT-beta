@@ -95,7 +95,8 @@ module sddt_core #(
   // Debug ports
   // =========================================================================
   output wire                         err,
-  output wire [7:0]                   latest_buf
+  output wire [7:0]                   latest_buf,
+  output wire [9:0]                   wdata_count
 );
 
   // =========================================================================
@@ -276,7 +277,8 @@ module sddt_core #(
     
     // Debug ports
     .err                  (err),
-    .latest_buf           (latest_buf)
+    .latest_buf           (latest_buf),
+    .wdata_count          (wdata_count)
   );
 
 endmodule

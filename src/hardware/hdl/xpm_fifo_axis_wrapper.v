@@ -10,9 +10,15 @@ module xpm_fifo_axis_wrapper #(
     output S_AXIS_TREADY,
 
     output [TDATA_WIDTH-1:0] M_AXIS_TDATA,
+    output [TDATA_WIDTH/8-1:0] M_AXIS_TKEEP,
+    output M_AXIS_TLAST,
     output M_AXIS_TVALID,
-    input M_AXIS_TREADY
+    input M_AXIS_TREADY,
+    
+    output [$clog2(FIFO_DEPTH):0] wr_data_count
 );
+    assign M_AXIS_TLAST = 1'b1;
+    assign M_AXIS_TKEEP = {TDATA_WIDTH/8{1'b1}};
     
     // --------------------------------------------------------
     // Xilinx XPM_FIFO_AXIS Instantiation
@@ -21,7 +27,8 @@ module xpm_fifo_axis_wrapper #(
         .FIFO_DEPTH(FIFO_DEPTH),
         .TDATA_WIDTH(TDATA_WIDTH),
         .FIFO_MEMORY_TYPE("auto"),
-        .PACKET_FIFO("false")
+        .PACKET_FIFO("false"),
+        .WR_DATA_COUNT_WIDTH($clog2(FIFO_DEPTH)+1)
     ) axis_fifo_inst (
         .s_aclk(clk),
         .s_aresetn(!rst),
@@ -48,7 +55,10 @@ module xpm_fifo_axis_wrapper #(
         .m_axis_tstrb(),
         .m_axis_tuser(),
         .m_axis_tid(),
-        .m_axis_tdest()
+        .m_axis_tdest(),
+        
+        // Write data count
+        .wr_data_count_axis(wr_data_count)
     );
 
 endmodule
