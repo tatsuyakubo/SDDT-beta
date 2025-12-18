@@ -28,6 +28,7 @@ module xpm_fifo_axis_wrapper #(
         .TDATA_WIDTH(TDATA_WIDTH),
         .FIFO_MEMORY_TYPE("auto"),
         .PACKET_FIFO("false"),
+        .USE_ADV_FEATURES("0000000000000100"), // write data count
         .WR_DATA_COUNT_WIDTH($clog2(FIFO_DEPTH)+1)
     ) axis_fifo_inst (
         .s_aclk(clk),

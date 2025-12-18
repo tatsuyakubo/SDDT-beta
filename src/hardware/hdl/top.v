@@ -103,6 +103,7 @@ module top #(parameter tCK = 1500, SIM = "false")
   wire         sddt_err;
   wire [7:0]   sddt_latest_buf;
   wire [9:0]   sddt_wdata_count;
+  wire [9:0]   sddt_rdata_count;
 
   // =========================================================================
   // SDDT Core Instance 
@@ -186,7 +187,8 @@ module top #(parameter tCK = 1500, SIM = "false")
     // Debug ports
     .err                  (sddt_err),
     .latest_buf           (sddt_latest_buf),
-    .wdata_count          (sddt_wdata_count)
+    .wdata_count          (sddt_wdata_count),
+    .rdata_count          (sddt_rdata_count)
   );
   
   // Control signal assignments
@@ -260,6 +262,7 @@ module top #(parameter tCK = 1500, SIM = "false")
   assign axi_gpio_in[31:25] = 7'b0;
   
   assign axi_gpio_in2[7:0] = sddt_wdata_count[7:0];
+  assign axi_gpio_in2[15:8] = sddt_rdata_count[7:0];
   assign axi_gpio_in2[23:16] = cmd_data_fifo_count[7:0];
 
 endmodule
