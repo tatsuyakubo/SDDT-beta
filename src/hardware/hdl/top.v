@@ -95,11 +95,9 @@ module top #(parameter tCK = 1500, SIM = "false")
   wire [31:0]  axi_gpio_in;
   wire [31:0]  axi_gpio_in2;
   wire [31:0]  axi_gpio_out;
-  wire [127:0] M_AXIS_MM2S_1_tdata;
-  wire [15:0]  M_AXIS_MM2S_1_tkeep;
-  wire         M_AXIS_MM2S_1_tlast;
-  wire         M_AXIS_MM2S_1_tready;
-  wire         M_AXIS_MM2S_1_tvalid;
+  wire [127:0] M_AXIS_CMD_tdata;
+  wire         M_AXIS_CMD_tready;
+  wire         M_AXIS_CMD_tvalid;
 
   // SDDT Core debug signals
   wire         sddt_err;
@@ -179,12 +177,10 @@ module top #(parameter tCK = 1500, SIM = "false")
     .S_AXIS_H2C_0_tvalid  (M_AXIS_MM2S_0_tvalid),
     .S_AXIS_H2C_0_tready  (M_AXIS_MM2S_0_tready),
     
-    // AXI Stream H2C Interface 1 (from DMA MM2S_1 - Instructions)
-    .S_AXIS_H2C_1_tdata   (M_AXIS_MM2S_1_tdata),
-    .S_AXIS_H2C_1_tkeep   (M_AXIS_MM2S_1_tkeep),
-    .S_AXIS_H2C_1_tlast   (M_AXIS_MM2S_1_tlast),
-    .S_AXIS_H2C_1_tvalid  (M_AXIS_MM2S_1_tvalid),
-    .S_AXIS_H2C_1_tready  (M_AXIS_MM2S_1_tready),
+    // AXI Stream Command Interface
+    .S_AXIS_CMD_tdata   (M_AXIS_CMD_tdata),
+    .S_AXIS_CMD_tvalid  (M_AXIS_CMD_tvalid),
+    .S_AXIS_CMD_tready  (M_AXIS_CMD_tready),
     
     // Debug ports
     .err                  (sddt_err),
@@ -198,18 +194,24 @@ module top #(parameter tCK = 1500, SIM = "false")
   assign per_ref_init = 1'b0;
   assign rbe_switch_mode = 1'b0;
 
+  wire [31:0] cmd_data_fifo_count;
+
   // =========================================================================
   // PS Interface Instance (DMA Controller)
   // =========================================================================
   ps_interface ps_interface_i (
+
     .M_AXIS_MM2S_0_tdata  (M_AXIS_MM2S_0_tdata),
     .M_AXIS_MM2S_0_tready (M_AXIS_MM2S_0_tready),
     .M_AXIS_MM2S_0_tvalid (M_AXIS_MM2S_0_tvalid),
-    .M_AXIS_MM2S_1_tdata  (M_AXIS_MM2S_1_tdata),
-    .M_AXIS_MM2S_1_tkeep  (M_AXIS_MM2S_1_tkeep),
-    .M_AXIS_MM2S_1_tlast  (M_AXIS_MM2S_1_tlast),
-    .M_AXIS_MM2S_1_tready (M_AXIS_MM2S_1_tready),
-    .M_AXIS_MM2S_1_tvalid (M_AXIS_MM2S_1_tvalid),
+
+    .M_AXIS_CMD_tdata  (M_AXIS_CMD_tdata),
+    .M_AXIS_CMD_tkeep  (M_AXIS_CMD_tkeep),
+    .M_AXIS_CMD_tlast  (M_AXIS_CMD_tlast),
+    .M_AXIS_CMD_tready (M_AXIS_CMD_tready),
+    .M_AXIS_CMD_tvalid (M_AXIS_CMD_tvalid),
+    .cmd_data_fifo_count  (cmd_data_fifo_count),
+
     .S_AXIS_S2MM_0_tdata  (S_AXIS_S2MM_0_tdata),
     .S_AXIS_S2MM_0_tkeep  (S_AXIS_S2MM_0_tkeep),
     .S_AXIS_S2MM_0_tlast  (S_AXIS_S2MM_0_tlast),
@@ -255,6 +257,6 @@ module top #(parameter tCK = 1500, SIM = "false")
   assign axi_gpio_in[24:17] = sddt_latest_buf;
   assign axi_gpio_in[31:25] = 7'b0;
   
-  assign axi_gpio_in2[31:0] = 32'h80000000;
+  assign axi_gpio_in2[31:0] = cmd_data_fifo_count;
 
 endmodule
