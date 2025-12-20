@@ -35,61 +35,36 @@ module top #(parameter tCK = 1500, SIM = "false")
   // assign c0_ddr4_cs_n[1] = 1'b1;
   // assign c0_ddr4_cke[1] = 1'b0;
 
-  // PS Interface <->
+  // PS Interface <-> SDDT Core interface wires
+  wire         axi_aclk;
+  wire         axi_aresetn;
   wire [127:0] M_AXIS_CMD_tdata;
-  wire M_AXIS_CMD_tready;
-  wire M_AXIS_CMD_tvalid;
-  wire axi_aclk;
-  wire [0:0] axi_resetn;
-  wire [31:0] gpio2_io_i;
+  wire         M_AXIS_CMD_tready;
+  wire         M_AXIS_CMD_tvalid;
+  wire [31:0]  gpio2_io_i;
 
   // =========================================================================
   // PS Interface Instance
   // =========================================================================
   ps_interface ps_interface_i (
+  .axi_aclk(axi_aclk),
+  .axi_aresetn(axi_aresetn),
   .M_AXIS_CMD_tdata(M_AXIS_CMD_tdata),
   .M_AXIS_CMD_tready(M_AXIS_CMD_tready),
   .M_AXIS_CMD_tvalid(M_AXIS_CMD_tvalid),
-  .axi_aclk(axi_aclk),
-  .axi_resetn(axi_resetn),
   .gpio2_io_i(gpio2_io_i)
   );
 
   // =========================================================================
-  // Xilinx XPM_FIFO_AXIS Instance
+  // SDDT Core Instance
   // =========================================================================
-  localparam FIFO_DEPTH = 16;
-  localparam CMD_WIDTH = 128;
-  localparam COUNT_WIDTH = $clog2(FIFO_DEPTH)+1;
-  wire [COUNT_WIDTH-1:0] wr_data_count_axis;
-  assign gpio2_io_i = {16'd13, {(16-COUNT_WIDTH){1'b0}}, wr_data_count_axis};
-  xpm_fifo_axis #(
-  .CLOCKING_MODE("independent_clock"),        // String
-  .FIFO_DEPTH(FIFO_DEPTH),                    // DECIMAL
-  .TDATA_WIDTH(CMD_WIDTH),                    // DECIMAL
-  .USE_ADV_FEATURES("1004"),                  // String; 1004: Valid and enable wr_data_count
-  .WR_DATA_COUNT_WIDTH(COUNT_WIDTH)           // DECIMAL
-  )
-  xpm_fifo_axis_i (
-  // Master Interface
-  .m_aclk(axi_aclk),                       // 1-bit input: Master Interface Clock: All signals on master interface are sampled on the rising edge
-                                              // of this clock.
-  .m_axis_tready(1'b0),                    // 1-bit input: TREADY: Indicates that the slave can accept a transfer in the current cycle.
-  .m_axis_tdata(),                         // TDATA_WIDTH-bit output: TDATA: The primary payload that is used to provide the data that is passing
-                                              // across the interface. The width of the data payload is an integer number of bytes.
-  .m_axis_tvalid(),                        // 1-bit output: TVALID: Indicates that the master is driving a valid transfer. A transfer takes place
-                                              // when both TVALID and TREADY are asserted
-  // Slave Interface
-  .s_aclk(axi_aclk),                       // 1-bit input: Slave Interface Clock: All signals on slave interface are sampled on the rising edge
-                                              // of this clock.
-  .s_aresetn(axi_resetn),                  // 1-bit input: Active low asynchronous reset.
-  .s_axis_tready(M_AXIS_CMD_tready),       // 1-bit output: TREADY: Indicates that the slave can accept a transfer in the current cycle.
-  .s_axis_tdata(M_AXIS_CMD_tdata),         // TDATA_WIDTH-bit input: TDATA: The primary payload that is used to provide the data that is passing
-                                              // across the interface. The width of the data payload is an integer number of bytes.
-  .s_axis_tvalid(M_AXIS_CMD_tvalid),       // 1-bit input: TVALID: Indicates that the master is driving a valid transfer. A transfer takes place
-                                              // when both TVALID and TREADY are asserted
-  // Status signals
-  .wr_data_count_axis(wr_data_count_axis)  // WR_DATA_COUNT_WIDTH-bit output: Write Data Count: This bus indicates the number of words written
+  sddt_core sddt_core_i (
+  .axi_aclk(axi_aclk),
+  .axi_aresetn(axi_aresetn),
+  .S_AXIS_CMD_tdata(M_AXIS_CMD_tdata),
+  .S_AXIS_CMD_tvalid(M_AXIS_CMD_tvalid),
+  .S_AXIS_CMD_tready(M_AXIS_CMD_tready),
+  .gpio_out(gpio2_io_i)
   );
 
 
