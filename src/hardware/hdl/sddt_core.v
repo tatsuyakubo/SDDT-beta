@@ -3,7 +3,7 @@
 
 module sddt_core (
   // =========================================================================
-  // System signals
+  // System Signals
   // =========================================================================
   input  wire         axi_aclk,
   input  wire         axi_aresetn,
@@ -83,46 +83,44 @@ module sddt_core (
   output wire         S_AXIS_CMD_tready,
   
   // =========================================================================
-  // Debug ports
+  // Debug Signals
   // =========================================================================
   output wire [31:0]  gpio_out
 );
-  wire [COUNT_WIDTH-1:0] wr_data_count_axis;
-  assign gpio_out = {16'd13, {(16-COUNT_WIDTH){1'b0}}, wr_data_count_axis};
 
   // =========================================================================
-  // Xilinx XPM_FIFO_AXIS Instance
+  // Internal Wires
   // =========================================================================
-  localparam FIFO_DEPTH = 16;
-  localparam CMD_WIDTH = 128;
-  localparam COUNT_WIDTH = $clog2(FIFO_DEPTH)+1;
+  wire [CMD_FIFO_COUNT_WIDTH-1:0] cmd_fifo_wr_data_count;
+  assign gpio_out = {16'd13, {(16-CMD_FIFO_COUNT_WIDTH){1'b0}}, cmd_fifo_wr_data_count};
+
+  // =========================================================================
+  // Command FIFO
+  // =========================================================================
+  localparam CMD_FIFO_DEPTH = 16;
+  localparam CMD_FIFO_WIDTH = 128;
+  localparam CMD_FIFO_COUNT_WIDTH = $clog2(CMD_FIFO_DEPTH)+1;
   xpm_fifo_axis #(
-  .CLOCKING_MODE("independent_clock"),        // String
-  .FIFO_DEPTH(FIFO_DEPTH),                    // DECIMAL
-  .TDATA_WIDTH(CMD_WIDTH),                    // DECIMAL
-  .USE_ADV_FEATURES("1004"),                  // String; 1004: Valid and enable wr_data_count
-  .WR_DATA_COUNT_WIDTH(COUNT_WIDTH)           // DECIMAL
+  .CLOCKING_MODE("independent_clock"),
+  .FIFO_DEPTH(CMD_FIFO_DEPTH),
+  .TDATA_WIDTH(CMD_FIFO_WIDTH),
+  .USE_ADV_FEATURES("1004"), // Valid and enable wr_data_count
+  .WR_DATA_COUNT_WIDTH(CMD_FIFO_COUNT_WIDTH)
   )
-  xpm_fifo_axis_i (
+  cmd_fifo (
   // Master Interface
-  .m_aclk(axi_aclk),                       // 1-bit input: Master Interface Clock: All signals on master interface are sampled on the rising edge
-                                              // of this clock.
-  .m_axis_tready(1'b0),                    // 1-bit input: TREADY: Indicates that the slave can accept a transfer in the current cycle.
-  .m_axis_tdata(),                         // TDATA_WIDTH-bit output: TDATA: The primary payload that is used to provide the data that is passing
-                                              // across the interface. The width of the data payload is an integer number of bytes.
-  .m_axis_tvalid(),                        // 1-bit output: TVALID: Indicates that the master is driving a valid transfer. A transfer takes place
-                                              // when both TVALID and TREADY are asserted
+  .m_aclk(axi_aclk),
+  .m_axis_tready(1'b0),
+  .m_axis_tdata(),
+  .m_axis_tvalid(),
   // Slave Interface
-  .s_aclk(axi_aclk),                       // 1-bit input: Slave Interface Clock: All signals on slave interface are sampled on the rising edge
-                                              // of this clock.
-  .s_aresetn(axi_aresetn),                  // 1-bit input: Active low asynchronous reset.
-  .s_axis_tready(S_AXIS_CMD_tready),       // 1-bit output: TREADY: Indicates that the slave can accept a transfer in the current cycle.
-  .s_axis_tdata(S_AXIS_CMD_tdata),         // TDATA_WIDTH-bit input: TDATA: The primary payload that is used to provide the data that is passing
-                                              // across the interface. The width of the data payload is an integer number of bytes.
-  .s_axis_tvalid(S_AXIS_CMD_tvalid),       // 1-bit input: TVALID: Indicates that the master is driving a valid transfer. A transfer takes place
-                                              // when both TVALID and TREADY are asserted
+  .s_aclk(axi_aclk),
+  .s_aresetn(axi_aresetn),
+  .s_axis_tready(S_AXIS_CMD_tready),
+  .s_axis_tdata(S_AXIS_CMD_tdata),
+  .s_axis_tvalid(S_AXIS_CMD_tvalid),
   // Status signals
-  .wr_data_count_axis(wr_data_count_axis)  // WR_DATA_COUNT_WIDTH-bit output: Write Data Count: This bus indicates the number of words written
+  .wr_data_count_axis(cmd_fifo_wr_data_count)
   );
 
 
