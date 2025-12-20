@@ -48,7 +48,7 @@ module xpm_fifo_axis_wrapper (
     // Master Interface
     .m_aclk(aclk),                           // 1-bit input: Master Interface Clock: All signals on master interface are sampled on the rising edge
                                                 // of this clock.
-    .m_axis_tready(1'b0),                    // 1-bit input: TREADY: Indicates that the slave can accept a transfer in the current cycle.
+    .m_axis_tready(M_AXIS_TREADY),           // 1-bit input: TREADY: Indicates that the slave can accept a transfer in the current cycle.
     .m_axis_tdata(M_AXIS_TDATA),             // TDATA_WIDTH-bit output: TDATA: The primary payload that is used to provide the data that is passing
                                                 // across the interface. The width of the data payload is an integer number of bytes.
     .m_axis_tdest(),                         // TDEST_WIDTH-bit output: TDEST: Provides routing information for the data stream.
