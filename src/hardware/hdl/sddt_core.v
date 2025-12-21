@@ -73,18 +73,23 @@ module sddt_core #(
   // =========================================================================
   // Internal Signals
   // =========================================================================
-  wire c0_ddr4_clk;
-  wire c0_ddr4_rst;
-  wire c0_init_calib_complete;
+  wire         c0_ddr4_clk;
+  wire         c0_ddr4_rst;
+  wire         c0_init_calib_complete;
 
   // =========================================================================
   // Internal Wires
   // =========================================================================
+  wire         m_axis_cmd_tready;
+  wire [127:0] m_axis_tmp_tdata;
+  wire         m_axis_tmp_tvalid;
+
   wire [CMD_FIFO_COUNT_WIDTH-1:0] cmd_fifo_wr_data_count;
-  assign states = {16'd13, {(16-CMD_FIFO_COUNT_WIDTH){1'b0}}, cmd_fifo_wr_data_count};
+  wire [TMP_FIFO_COUNT_WIDTH-1:0] tmp_fifo_wr_data_count;
+  assign states = {{(16-TMP_FIFO_COUNT_WIDTH){1'b0}}, tmp_fifo_wr_data_count, {(16-CMD_FIFO_COUNT_WIDTH){1'b0}}, cmd_fifo_wr_data_count};
 
   // =========================================================================
-  // Command FIFO
+  // Command FIFO (Async)
   // =========================================================================
   localparam CMD_FIFO_DEPTH = 16;
   localparam CMD_FIFO_WIDTH = 128;
@@ -97,19 +102,47 @@ module sddt_core #(
     .WR_DATA_COUNT_WIDTH(CMD_FIFO_COUNT_WIDTH)
   )
   cmd_fifo (
-    // Master Interface
+    // Master interface
     .m_aclk(c0_ddr4_clk),
-    .m_axis_tready(1'b0),
-    .m_axis_tdata(),
-    .m_axis_tvalid(),
-    // Slave Interface
+    .m_axis_tready(m_axis_cmd_tready),
+    .m_axis_tdata(m_axis_cmd_tdata),
+    .m_axis_tvalid(m_axis_cmd_tvalid),
+    // Slave interface
     .s_aclk(axi_aclk),
-    .s_aresetn(axi_aresetn | c0_ddr4_rst | ~c0_init_calib_complete),
+    .s_aresetn(axi_aresetn & ~c0_ddr4_rst & c0_init_calib_complete),
     .s_axis_tready(S_AXIS_CMD_tready),
     .s_axis_tdata(S_AXIS_CMD_tdata),
     .s_axis_tvalid(S_AXIS_CMD_tvalid),
     // Status signals
     .wr_data_count_axis(cmd_fifo_wr_data_count)
+  );
+
+  // =========================================================================
+  // Tmp FIFO (Sync)
+  // =========================================================================
+  localparam TMP_FIFO_DEPTH = 16;
+  localparam TMP_FIFO_WIDTH = 128;
+  localparam TMP_FIFO_COUNT_WIDTH = $clog2(TMP_FIFO_DEPTH)+1;
+  xpm_fifo_axis #(
+    .CLOCKING_MODE("common_clock"),
+    .FIFO_DEPTH(TMP_FIFO_DEPTH),
+    .TDATA_WIDTH(TMP_FIFO_WIDTH),
+    .USE_ADV_FEATURES("1004"), // Valid and enable wr_data_count
+    .WR_DATA_COUNT_WIDTH(TMP_FIFO_COUNT_WIDTH)
+  )
+  tmp_fifo (
+    // Master interface
+    .m_axis_tready(1'b0),
+    .m_axis_tdata(),
+    .m_axis_tvalid(),
+    // Slave interface
+    .s_aclk(c0_ddr4_clk),
+    .s_aresetn(~c0_ddr4_rst & c0_init_calib_complete),
+    .s_axis_tready(m_axis_cmd_tready),
+    .s_axis_tdata(m_axis_cmd_tdata),
+    .s_axis_tvalid(m_axis_cmd_tvalid),
+    // Status signals
+    .wr_data_count_axis(tmp_fifo_wr_data_count)
   );
 
   // =========================================================================
