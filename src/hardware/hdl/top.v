@@ -83,6 +83,10 @@ module top #(parameter tCK = 1500, SIM = "false")
     .S_AXIS_CMD_tdata(M_AXIS_CMD_tdata),
     .S_AXIS_CMD_tvalid(M_AXIS_CMD_tvalid),
     .S_AXIS_CMD_tready(M_AXIS_CMD_tready),
+    // Read Data FIFO interface
+    .M_AXIS_RDATA_tdata(),
+    .M_AXIS_RDATA_tvalid(),
+    .M_AXIS_RDATA_tready(1'b0),
     // Debug signals
     .control(gpio2_io_o),
     .state(gpio2_io_i)

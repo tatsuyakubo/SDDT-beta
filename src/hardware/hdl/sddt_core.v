@@ -42,15 +42,6 @@ module sddt_core #(
   output wire                      c0_ddr4_parity,
   
   // // =========================================================================
-  // // AXI Stream C2H (Card to Host - Read Data Output to DMA S2MM)
-  // // =========================================================================
-  // output wire [511:0]                 M_AXIS_C2H_tdata,
-  // output wire                         M_AXIS_C2H_tvalid,
-  // output wire [63:0]                  M_AXIS_C2H_tkeep,
-  // output wire                         M_AXIS_C2H_tlast,
-  // input  wire                         M_AXIS_C2H_tready,
-  
-  // // =========================================================================
   // // AXI Stream H2C Interface 0 (Host to Card - Write Data Input from DMA MM2S_0)
   // // =========================================================================
   // input  wire [511:0]                 S_AXIS_H2C_0_tdata,
@@ -63,6 +54,13 @@ module sddt_core #(
   input  wire [127:0]              S_AXIS_CMD_tdata,
   input  wire                      S_AXIS_CMD_tvalid,
   output wire                      S_AXIS_CMD_tready,
+  
+  // =========================================================================
+  // AXI Stream Read Data Interface
+  // =========================================================================
+  output wire [511:0]              M_AXIS_RDATA_tdata,
+  output wire                      M_AXIS_RDATA_tvalid,
+  input  wire                      M_AXIS_RDATA_tready,
   
   // =========================================================================
   // Debug Signals
@@ -112,8 +110,8 @@ module sddt_core #(
   // Internal Wires
   // =========================================================================
   wire         m_axis_cmd_tready;
-  wire [127:0] m_axis_tmp_tdata;
-  wire         m_axis_tmp_tvalid;
+  wire [127:0] m_axis_cmd_tdata;
+  wire         m_axis_cmd_tvalid;
 
   // =========================================================================
   // Command FIFO (Async)
@@ -137,7 +135,7 @@ module sddt_core #(
     .m_axis_tvalid(m_axis_cmd_tvalid),
     // Slave interface
     .s_aclk(axi_aclk),
-    .s_aresetn(axi_aresetn & ~c0_ddr4_rst & c0_init_calib_complete),
+    .s_aresetn(axi_aresetn),
     .s_axis_tready(S_AXIS_CMD_tready),
     .s_axis_tdata(S_AXIS_CMD_tdata),
     .s_axis_tvalid(S_AXIS_CMD_tvalid),
@@ -146,36 +144,53 @@ module sddt_core #(
   );
 
   // =========================================================================
-  // Tmp FIFO (Sync)
+  // AXI4 Instr
   // =========================================================================
-  localparam TMP_FIFO_DEPTH = 16;
-  localparam TMP_FIFO_WIDTH = 128;
-  localparam TMP_FIFO_COUNT_WIDTH = $clog2(TMP_FIFO_DEPTH)+1;
-  wire [TMP_FIFO_COUNT_WIDTH-1:0] tmp_fifo_wr_data_count;
-  xpm_fifo_axis #(
-    .CLOCKING_MODE("common_clock"),
-    .FIFO_DEPTH(TMP_FIFO_DEPTH),
-    .TDATA_WIDTH(TMP_FIFO_WIDTH),
-    .USE_ADV_FEATURES("1004"), // Valid and enable wr_data_count
-    .WR_DATA_COUNT_WIDTH(TMP_FIFO_COUNT_WIDTH)
+  wire [3:0]                ddr_write;
+  wire [3:0]                ddr_read;
+  wire [3:0]                ddr_pre;
+  wire [3:0]                ddr_act;
+  wire [3:0]                ddr_ref;
+  wire [3:0]                ddr_zq;
+  wire [3:0]                ddr_nop;
+  wire [3:0]                ddr_ap;
+  wire [3:0]                ddr_half_bl;
+  wire [3:0]                ddr_pall;
+  wire [4*BG_WIDTH-1:0]     ddr_bg;
+  wire [4*BANK_WIDTH-1:0]   ddr_bank;
+  wire [4*COL_WIDTH-1:0]    ddr_col;
+  wire [4*ROW_WIDTH-1:0]    ddr_row;
+  axi4_instr #(
+    .BG_WIDTH(BG_WIDTH),
+    .BANK_WIDTH(BANK_WIDTH),
+    .COL_WIDTH(COL_WIDTH),
+    .ROW_WIDTH(ROW_WIDTH)
   )
-  tmp_fifo (
-    // Master interface
-    .m_axis_tready(1'b0),
-    .m_axis_tdata(),
-    .m_axis_tvalid(),
-    // Slave interface
-    .s_aclk(c0_ddr4_clk),
-    .s_aresetn(~c0_ddr4_rst & c0_init_calib_complete),
-    .s_axis_tready(m_axis_cmd_tready),
-    .s_axis_tdata(m_axis_cmd_tdata),
-    .s_axis_tvalid(m_axis_cmd_tvalid),
-    // Status signals
-    .wr_data_count_axis(tmp_fifo_wr_data_count)
+  axi4_instr_i (
+    .clk(c0_ddr4_clk),
+    .rst(c0_ddr4_rst || ~c0_init_calib_complete),
+    // AXI -> Instr
+    .S_AXIS_TDATA(m_axis_cmd_tdata),
+    .S_AXIS_TVALID(m_axis_cmd_tvalid),
+    .S_AXIS_TREADY(m_axis_cmd_tready),
+    // Instr -> DDR4 Interface
+    .ddr_write(ddr_write),
+    .ddr_read(ddr_read),
+    .ddr_pre(ddr_pre),
+    .ddr_act(ddr_act),
+    .ddr_ref(ddr_ref),
+    .ddr_zq(ddr_zq),
+    .ddr_nop(ddr_nop),
+    .ddr_ap(ddr_ap),
+    .ddr_half_bl(ddr_half_bl),
+    .ddr_pall(ddr_pall),
+    .ddr_bg(ddr_bg),
+    .ddr_bank(ddr_bank),
+    .ddr_col(ddr_col),
+    .ddr_row(ddr_row),
+    // Debug
+    .latest_instr_id()
   );
-
-  // Combine command and temporary FIFO write data counts
-  assign state_i = {{(16-TMP_FIFO_COUNT_WIDTH){1'b0}}, tmp_fifo_wr_data_count, {(16-CMD_FIFO_COUNT_WIDTH){1'b0}}, cmd_fifo_wr_data_count};
 
   // =========================================================================
   // DDR Interface Instance
@@ -229,21 +244,21 @@ module sddt_core #(
     .c0_ddr4_dqs_t          (c0_ddr4_dqs_t),
     .c0_ddr4_dm_dbi_n       (c0_ddr4_dm_dbi_n),
     // DDR command interface (from cmd_scheduler)
-    .ddr_write              (4'b0000),
-    .ddr_read               (4'b0000),
-    .ddr_pre                (4'b0000),
-    .ddr_act                (4'b0000),
-    .ddr_ref                (4'b0000),
-    .ddr_zq                 (4'b0000),
-    .ddr_nop                (4'b1111),
-    .ddr_ap                 (4'b0000),
-    .ddr_pall               (4'b0000),
-    .ddr_half_bl            (4'b0000),
-    .ddr_bg                 (8'b0),
-    .ddr_bank               (8'b0),
-    .ddr_col                (40'b0),
-    .ddr_row                (68'b0),
-    .ddr_wdata              (512'b0),
+    .ddr_write              (ddr_write),
+    .ddr_read               (ddr_read),
+    .ddr_pre                (ddr_pre),
+    .ddr_act                (ddr_act),
+    .ddr_ref                (ddr_ref),
+    .ddr_zq                 (ddr_zq),
+    .ddr_nop                (ddr_nop),
+    .ddr_ap                 (ddr_ap),
+    .ddr_pall               (ddr_pall),
+    .ddr_half_bl            (ddr_half_bl),
+    .ddr_bg                 (ddr_bg),
+    .ddr_bank               (ddr_bank),
+    .ddr_col                (ddr_col),
+    .ddr_row                (ddr_row),
+    .ddr_wdata              ({{(512-32){1'b0}}, control_r}),
     // Read data interface (to cmd_scheduler)
     .rdData                 (rdData),
     .rdDataEn               (rdDataEn),
@@ -256,6 +271,39 @@ module sddt_core #(
     .mcRdCAS                (mcRdCAS),
     .mcWrCAS                (mcWrCAS)
   );
+
+  // =========================================================================
+  // Read Data FIFO (Async)
+  // =========================================================================
+  localparam RDATA_FIFO_DEPTH = 16;
+  localparam RDATA_FIFO_WIDTH = 512;
+  localparam RDATA_FIFO_COUNT_WIDTH = $clog2(RDATA_FIFO_DEPTH)+1;
+  wire [RDATA_FIFO_COUNT_WIDTH-1:0] rdata_fifo_wr_data_count;
+  xpm_fifo_axis #(
+    .CLOCKING_MODE("independent_clock"),
+    .FIFO_DEPTH(RDATA_FIFO_DEPTH),
+    .TDATA_WIDTH(RDATA_FIFO_WIDTH),
+    .USE_ADV_FEATURES("1004"), // Valid and enable wr_data_count
+    .WR_DATA_COUNT_WIDTH(RDATA_FIFO_COUNT_WIDTH)
+  )
+  rdata_fifo (
+    // Master interface
+    .m_aclk(axi_aclk),
+    .m_axis_tready(M_AXIS_RDATA_tready),
+    .m_axis_tdata(M_AXIS_RDATA_tdata),
+    .m_axis_tvalid(M_AXIS_RDATA_tvalid),
+    // Slave interface
+    .s_aclk(c0_ddr4_clk),
+    .s_aresetn(~c0_ddr4_rst & c0_init_calib_complete),
+    .s_axis_tready(),
+    .s_axis_tdata(rdData),
+    .s_axis_tvalid(rdDataEn),
+    // Status signals
+    .wr_data_count_axis(rdata_fifo_wr_data_count)
+  );
+
+  // Combine command and read data FIFO write data counts
+  assign state_i = {{(32-RDATA_FIFO_COUNT_WIDTH){1'b0}}, rdata_fifo_wr_data_count};
 
 
   // // =========================================================================
