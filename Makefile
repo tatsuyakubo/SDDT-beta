@@ -3,10 +3,10 @@ all: software
 create_vivado_project:
 	vivado \
 	    -mode batch \
-	    -source scripts/vivado2.tcl \
+	    -source scripts/vivado1.tcl \
 	    -tclargs \
 			--origin_dir ./scripts \
-			--project_name vivado1
+			--project_name vivado2
 
 copy_vivado_outputs:
 	mkdir -p ./bin

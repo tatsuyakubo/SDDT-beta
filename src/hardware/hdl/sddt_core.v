@@ -67,7 +67,8 @@ module sddt_core #(
   // =========================================================================
   // Debug Signals
   // =========================================================================
-  output wire [31:0]               states
+  input  wire [31:0]               control,
+  output reg  [31:0]               state
 );
 
   // =========================================================================
@@ -76,6 +77,36 @@ module sddt_core #(
   wire         c0_ddr4_clk;
   wire         c0_ddr4_rst;
   wire         c0_init_calib_complete;
+  // CDC for control signal
+  reg  [31:0]  control_r;
+  reg  [31:0]  _control_sync1;
+  reg  [31:0]  _control_sync2;
+  always @(posedge c0_ddr4_clk) begin
+    if (c0_ddr4_rst || ~c0_init_calib_complete) begin
+      _control_sync1 <= 32'b0;
+      _control_sync2 <= 32'b0;
+      control_r <= 32'b0;
+    end else begin
+      _control_sync1 <= control;
+      _control_sync2 <= _control_sync1;
+      control_r <= _control_sync2;
+    end
+  end
+  // CDC for state signal
+  wire [31:0] state_i;
+  reg [31:0] _state_sync1;
+  reg [31:0] _state_sync2;
+  always @(posedge axi_aclk) begin
+    if (~axi_aresetn) begin
+      _state_sync1 <= 32'b0;
+      _state_sync2 <= 32'b0;
+      state <= 32'b0;
+    end else begin
+      _state_sync1 <= state_i;
+      _state_sync2 <= _state_sync1;
+      state <= _state_sync2;
+    end
+  end
 
   // =========================================================================
   // Internal Wires
@@ -84,16 +115,13 @@ module sddt_core #(
   wire [127:0] m_axis_tmp_tdata;
   wire         m_axis_tmp_tvalid;
 
-  wire [CMD_FIFO_COUNT_WIDTH-1:0] cmd_fifo_wr_data_count;
-  wire [TMP_FIFO_COUNT_WIDTH-1:0] tmp_fifo_wr_data_count;
-  assign states = {{(16-TMP_FIFO_COUNT_WIDTH){1'b0}}, tmp_fifo_wr_data_count, {(16-CMD_FIFO_COUNT_WIDTH){1'b0}}, cmd_fifo_wr_data_count};
-
   // =========================================================================
   // Command FIFO (Async)
   // =========================================================================
   localparam CMD_FIFO_DEPTH = 16;
   localparam CMD_FIFO_WIDTH = 128;
   localparam CMD_FIFO_COUNT_WIDTH = $clog2(CMD_FIFO_DEPTH)+1;
+  wire [CMD_FIFO_COUNT_WIDTH-1:0] cmd_fifo_wr_data_count;
   xpm_fifo_axis #(
     .CLOCKING_MODE("independent_clock"),
     .FIFO_DEPTH(CMD_FIFO_DEPTH),
@@ -123,6 +151,7 @@ module sddt_core #(
   localparam TMP_FIFO_DEPTH = 16;
   localparam TMP_FIFO_WIDTH = 128;
   localparam TMP_FIFO_COUNT_WIDTH = $clog2(TMP_FIFO_DEPTH)+1;
+  wire [TMP_FIFO_COUNT_WIDTH-1:0] tmp_fifo_wr_data_count;
   xpm_fifo_axis #(
     .CLOCKING_MODE("common_clock"),
     .FIFO_DEPTH(TMP_FIFO_DEPTH),
@@ -144,6 +173,9 @@ module sddt_core #(
     // Status signals
     .wr_data_count_axis(tmp_fifo_wr_data_count)
   );
+
+  // Combine command and temporary FIFO write data counts
+  assign state_i = {{(16-TMP_FIFO_COUNT_WIDTH){1'b0}}, tmp_fifo_wr_data_count, {(16-CMD_FIFO_COUNT_WIDTH){1'b0}}, cmd_fifo_wr_data_count};
 
   // =========================================================================
   // DDR Interface Instance

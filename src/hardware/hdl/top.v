@@ -35,17 +35,22 @@ module top #(parameter tCK = 1500, SIM = "false")
   wire         M_AXIS_CMD_tready;
   wire         M_AXIS_CMD_tvalid;
   wire [31:0]  gpio2_io_i;
+  wire [31:0]  gpio2_io_o;
 
   // =========================================================================
   // PS Interface Instance
   // =========================================================================
   ps_interface ps_interface_i (
+    // System signals
     .axi_aclk(axi_aclk),
     .axi_aresetn(axi_aresetn),
+    // AXI Stream Command Interface
     .M_AXIS_CMD_tdata(M_AXIS_CMD_tdata),
     .M_AXIS_CMD_tready(M_AXIS_CMD_tready),
     .M_AXIS_CMD_tvalid(M_AXIS_CMD_tvalid),
-    .gpio2_io_i(gpio2_io_i)
+    // Debug signals
+    .gpio2_io_i(gpio2_io_i),
+    .gpio2_io_o(gpio2_io_o)
   );
 
   // =========================================================================
@@ -79,7 +84,8 @@ module top #(parameter tCK = 1500, SIM = "false")
     .S_AXIS_CMD_tvalid(M_AXIS_CMD_tvalid),
     .S_AXIS_CMD_tready(M_AXIS_CMD_tready),
     // Debug signals
-    .states(gpio2_io_i)
+    .control(gpio2_io_o),
+    .state(gpio2_io_i)
   );
 
 
