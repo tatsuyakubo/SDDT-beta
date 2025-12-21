@@ -3,37 +3,35 @@
 
 module top #(parameter tCK = 1500, SIM = "false")
   (
-  // // common signals
-  // input c0_sys_clk_p,
-  // input c0_sys_clk_n,
-  // input sys_rst,
+  // common signals
+  input sys_rst,
+  input c0_sys_clk_p,
+  input c0_sys_clk_n,
   
-  // // iob <> ddr4 sdram ip signals
-  // output             c0_ddr4_act_n,
-  // output [`ROW_ADDR_WIDTH-1:0]      c0_ddr4_adr,
-  // output [1:0]       c0_ddr4_ba,
-  // output [1:0]       c0_ddr4_bg,
-  // output [`CKE_WIDTH-1:0]       c0_ddr4_cke,
-  // output [`ODT_WIDTH-1:0]       c0_ddr4_odt,
-  // output [`CS_WIDTH-1:0]        c0_ddr4_cs_n,
-  // output [`CK_WIDTH-1:0]       c0_ddr4_ck_t,
-  // output [`CK_WIDTH-1:0]       c0_ddr4_ck_c,
-  // output             c0_ddr4_reset_n,
-
-  // // UDIMM_x8
-  // inout  [7:0]      c0_ddr4_dqs_c,
-  // inout  [7:0]      c0_ddr4_dqs_t,
-  // inout  [63:0]     c0_ddr4_dq,
-  // inout  [7:0]      c0_ddr4_dm_dbi_n,  
-  // output            c0_ddr4_parity,
+  // iob <> ddr4 sdram ip signals
+  output                       c0_ddr4_act_n,
+  output [`ROW_ADDR_WIDTH-1:0] c0_ddr4_adr,
+  output [1:0]                 c0_ddr4_ba,
+  output [1:0]                 c0_ddr4_bg,
+  output [`CKE_WIDTH-1:0]      c0_ddr4_cke,
+  output [`ODT_WIDTH-1:0]      c0_ddr4_odt,
+  output [`CS_WIDTH-1:0]       c0_ddr4_cs_n,
+  output [`CK_WIDTH-1:0]       c0_ddr4_ck_t,
+  output [`CK_WIDTH-1:0]       c0_ddr4_ck_c,
+  output                       c0_ddr4_reset_n,
+  inout  [7:0]                 c0_ddr4_dqs_c,
+  inout  [7:0]                 c0_ddr4_dqs_t,
+  inout  [63:0]                c0_ddr4_dq,
+  inout  [7:0]                 c0_ddr4_dm_dbi_n,  
+  output                       c0_ddr4_parity
 
   // output [3:0] user_led
   );
   
-  // // UDIMM_x8
-  // assign c0_ddr4_odt[1] = 1'b0;
-  // assign c0_ddr4_cs_n[1] = 1'b1;
-  // assign c0_ddr4_cke[1] = 1'b0;
+  // UDIMM_x8
+  assign c0_ddr4_odt[1] = 1'b0;
+  assign c0_ddr4_cs_n[1] = 1'b1;
+  assign c0_ddr4_cke[1] = 1'b0;
 
   // PS Interface <-> SDDT Core interface wires
   wire         axi_aclk;
@@ -47,24 +45,46 @@ module top #(parameter tCK = 1500, SIM = "false")
   // PS Interface Instance
   // =========================================================================
   ps_interface ps_interface_i (
-  .axi_aclk(axi_aclk),
-  .axi_aresetn(axi_aresetn),
-  .M_AXIS_CMD_tdata(M_AXIS_CMD_tdata),
-  .M_AXIS_CMD_tready(M_AXIS_CMD_tready),
-  .M_AXIS_CMD_tvalid(M_AXIS_CMD_tvalid),
-  .gpio2_io_i(gpio2_io_i)
+    .axi_aclk(axi_aclk),
+    .axi_aresetn(axi_aresetn),
+    .M_AXIS_CMD_tdata(M_AXIS_CMD_tdata),
+    .M_AXIS_CMD_tready(M_AXIS_CMD_tready),
+    .M_AXIS_CMD_tvalid(M_AXIS_CMD_tvalid),
+    .gpio2_io_i(gpio2_io_i)
   );
 
   // =========================================================================
   // SDDT Core Instance
   // =========================================================================
   sddt_core sddt_core_i (
-  .axi_aclk(axi_aclk),
-  .axi_aresetn(axi_aresetn),
-  .S_AXIS_CMD_tdata(M_AXIS_CMD_tdata),
-  .S_AXIS_CMD_tvalid(M_AXIS_CMD_tvalid),
-  .S_AXIS_CMD_tready(M_AXIS_CMD_tready),
-  .gpio_out(gpio2_io_i)
+    // System signals
+    .sys_rst(sys_rst),
+    .c0_sys_clk_p(c0_sys_clk_p),
+    .c0_sys_clk_n(c0_sys_clk_n),
+    .axi_aclk(axi_aclk),
+    .axi_aresetn(axi_aresetn),
+    // DDR4 SDRAM interface
+    .c0_ddr4_act_n(c0_ddr4_act_n),
+    .c0_ddr4_adr(c0_ddr4_adr),
+    .c0_ddr4_ba(c0_ddr4_ba),
+    .c0_ddr4_bg(c0_ddr4_bg),
+    .c0_ddr4_cke(c0_ddr4_cke),
+    .c0_ddr4_odt(c0_ddr4_odt),
+    .c0_ddr4_cs_n(c0_ddr4_cs_n),
+    .c0_ddr4_ck_t(c0_ddr4_ck_t),
+    .c0_ddr4_ck_c(c0_ddr4_ck_c),
+    .c0_ddr4_reset_n(c0_ddr4_reset_n),
+    .c0_ddr4_dqs_c(c0_ddr4_dqs_c),
+    .c0_ddr4_dqs_t(c0_ddr4_dqs_t),
+    .c0_ddr4_dq(c0_ddr4_dq),
+    .c0_ddr4_dm_dbi_n(c0_ddr4_dm_dbi_n),
+    .c0_ddr4_parity(c0_ddr4_parity),
+    // Command FIFO interface
+    .S_AXIS_CMD_tdata(M_AXIS_CMD_tdata),
+    .S_AXIS_CMD_tvalid(M_AXIS_CMD_tvalid),
+    .S_AXIS_CMD_tready(M_AXIS_CMD_tready),
+    // Debug signals
+    .gpio_out(gpio2_io_i)
   );
 
 
