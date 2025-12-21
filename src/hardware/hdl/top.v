@@ -4,9 +4,9 @@
 module top #(parameter tCK = 1500, SIM = "false")
   (
   // common signals
-  input sys_rst,
-  input c0_sys_clk_p,
-  input c0_sys_clk_n,
+  input                        c0_sys_clk_p,
+  input                        c0_sys_clk_n,
+  input                        sys_rst,
   
   // iob <> ddr4 sdram ip signals
   output                       c0_ddr4_act_n,
@@ -27,11 +27,6 @@ module top #(parameter tCK = 1500, SIM = "false")
 
   // output [3:0] user_led
   );
-  
-  // UDIMM_x8
-  assign c0_ddr4_odt[1] = 1'b0;
-  assign c0_ddr4_cs_n[1] = 1'b1;
-  assign c0_ddr4_cke[1] = 1'b0;
 
   // PS Interface <-> SDDT Core interface wires
   wire         axi_aclk;
@@ -84,7 +79,7 @@ module top #(parameter tCK = 1500, SIM = "false")
     .S_AXIS_CMD_tvalid(M_AXIS_CMD_tvalid),
     .S_AXIS_CMD_tready(M_AXIS_CMD_tready),
     // Debug signals
-    .gpio_out(gpio2_io_i)
+    .states(gpio2_io_i)
   );
 
 

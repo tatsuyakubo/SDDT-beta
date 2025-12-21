@@ -16,30 +16,30 @@ module sddt_core #(
   // =========================================================================
   // System Signals
   // =========================================================================
-  input  wire         c0_sys_clk_p,
-  input  wire         c0_sys_clk_n,
-  input  wire         sys_rst,
-  input  wire         axi_aclk,
-  input  wire         axi_aresetn,
+  input  wire                      c0_sys_clk_p,
+  input  wire                      c0_sys_clk_n,
+  input  wire                      sys_rst,
+  input  wire                      axi_aclk,
+  input  wire                      axi_aresetn,
   
   // =========================================================================
   // DDR4 SDRAM interface
   // =========================================================================
-  output wire                         c0_ddr4_act_n,
-  output wire [ROW_ADDR_WIDTH-1:0]    c0_ddr4_adr,
-  output wire [1:0]                   c0_ddr4_ba,
-  output wire [1:0]                   c0_ddr4_bg,
-  output wire [CKE_WIDTH-1:0]         c0_ddr4_cke,
-  output wire [ODT_WIDTH-1:0]         c0_ddr4_odt,
-  output wire [CS_WIDTH-1:0]          c0_ddr4_cs_n,
-  output wire [CK_WIDTH-1:0]          c0_ddr4_ck_t,
-  output wire [CK_WIDTH-1:0]          c0_ddr4_ck_c,
-  output wire                         c0_ddr4_reset_n,
-  inout  wire [7:0]                   c0_ddr4_dqs_c,
-  inout  wire [7:0]                   c0_ddr4_dqs_t,
-  inout  wire [63:0]                  c0_ddr4_dq,
-  inout  wire [7:0]                   c0_ddr4_dm_dbi_n,
-  output wire                         c0_ddr4_parity,
+  output wire                      c0_ddr4_act_n,
+  output wire [ROW_ADDR_WIDTH-1:0] c0_ddr4_adr,
+  output wire [1:0]                c0_ddr4_ba,
+  output wire [1:0]                c0_ddr4_bg,
+  output wire [CKE_WIDTH-1:0]      c0_ddr4_cke,
+  output wire [ODT_WIDTH-1:0]      c0_ddr4_odt,
+  output wire [CS_WIDTH-1:0]       c0_ddr4_cs_n,
+  output wire [CK_WIDTH-1:0]       c0_ddr4_ck_t,
+  output wire [CK_WIDTH-1:0]       c0_ddr4_ck_c,
+  output wire                      c0_ddr4_reset_n,
+  inout  wire [7:0]                c0_ddr4_dqs_c,
+  inout  wire [7:0]                c0_ddr4_dqs_t,
+  inout  wire [63:0]               c0_ddr4_dq,
+  inout  wire [7:0]                c0_ddr4_dm_dbi_n,
+  output wire                      c0_ddr4_parity,
   
   // // =========================================================================
   // // AXI Stream C2H (Card to Host - Read Data Output to DMA S2MM)
@@ -60,14 +60,14 @@ module sddt_core #(
   // =========================================================================
   // AXI Stream Command Interface
   // =========================================================================
-  input  wire [127:0] S_AXIS_CMD_tdata,
-  input  wire         S_AXIS_CMD_tvalid,
-  output wire         S_AXIS_CMD_tready,
+  input  wire [127:0]              S_AXIS_CMD_tdata,
+  input  wire                      S_AXIS_CMD_tvalid,
+  output wire                      S_AXIS_CMD_tready,
   
   // =========================================================================
   // Debug Signals
   // =========================================================================
-  output wire [31:0]  gpio_out
+  output wire [31:0]               states
 );
 
   // =========================================================================
@@ -81,7 +81,7 @@ module sddt_core #(
   // Internal Wires
   // =========================================================================
   wire [CMD_FIFO_COUNT_WIDTH-1:0] cmd_fifo_wr_data_count;
-  assign gpio_out = {16'd13, {(16-CMD_FIFO_COUNT_WIDTH){1'b0}}, cmd_fifo_wr_data_count};
+  assign states = {16'd13, {(16-CMD_FIFO_COUNT_WIDTH){1'b0}}, cmd_fifo_wr_data_count};
 
   // =========================================================================
   // Command FIFO
@@ -141,14 +141,12 @@ module sddt_core #(
     .c0_sys_clk_p           (c0_sys_clk_p),
     .c0_sys_clk_n           (c0_sys_clk_n),
     .sys_rst                (sys_rst),
-    
     // Clock and reset outputs
     .c0_ddr4_clk            (c0_ddr4_clk),
     .c0_ddr4_rst            (c0_ddr4_rst),
     .c0_init_calib_complete (c0_init_calib_complete),
     .dbg_clk                (dbg_clk),
     .dbg_bus                (dbg_bus),
-    
     // DDR4 SDRAM interface
     .c0_ddr4_act_n          (c0_ddr4_act_n),
     .c0_ddr4_adr            (c0_ddr4_adr),
@@ -165,7 +163,6 @@ module sddt_core #(
     .c0_ddr4_dqs_c          (c0_ddr4_dqs_c),
     .c0_ddr4_dqs_t          (c0_ddr4_dqs_t),
     .c0_ddr4_dm_dbi_n       (c0_ddr4_dm_dbi_n),
-    
     // DDR command interface (from cmd_scheduler)
     .ddr_write              (4'b0000),
     .ddr_read               (4'b0000),
@@ -182,17 +179,14 @@ module sddt_core #(
     .ddr_col                (40'b0),
     .ddr_row                (68'b0),
     .ddr_wdata              (512'b0),
-    
     // Read data interface (to cmd_scheduler)
     .rdData                 (rdData),
     .rdDataEn               (rdDataEn),
-
     // For DLL toggler clock mux
     `ifdef ENABLE_DLL_TOGGLER
     .ddr4_ui_clk            (ddr4_ui_clk),
     .c0_ddr4_dll_off_clk    (c0_ddr4_dll_off_clk),
     `endif
-    
     // CAS signals
     .mcRdCAS                (mcRdCAS),
     .mcWrCAS                (mcWrCAS)

@@ -192,6 +192,7 @@ module ddr4_interface #(
   // =========================================================================
   // PHY DDR4 Instance
   // =========================================================================
+  // UDIMM_x8
   phy_ddr4_udimm phy_ddr4_i (
     .sys_rst                  (sys_rst),
     .c0_sys_clk_p             (c0_sys_clk_p),
@@ -252,9 +253,11 @@ module ddr4_interface #(
     .tCWL                     (tCWL),
     .dbg_bus                  (dbg_bus)
   );
-  
   // UDIMM does not use parity signal, tie it to 0
   assign c0_ddr4_parity = 1'b0;
+  assign c0_ddr4_odt[1] = 1'b0;
+  assign c0_ddr4_cs_n[1] = 1'b1;
+  assign c0_ddr4_cke[1] = 1'b0;
 
   // =========================================================================
   // DDR4 Adapter Instance
