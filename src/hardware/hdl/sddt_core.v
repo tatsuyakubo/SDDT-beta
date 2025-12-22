@@ -41,19 +41,19 @@ module sddt_core #(
   inout  wire [7:0]                c0_ddr4_dm_dbi_n,
   output wire                      c0_ddr4_parity,
   
-  // // =========================================================================
-  // // AXI Stream H2C Interface 0 (Host to Card - Write Data Input from DMA MM2S_0)
-  // // =========================================================================
-  // input  wire [511:0]                 S_AXIS_H2C_0_tdata,
-  // input  wire                         S_AXIS_H2C_0_tvalid,
-  // output wire                         S_AXIS_H2C_0_tready,
-  
   // =========================================================================
   // AXI Stream Command Interface
   // =========================================================================
   input  wire [127:0]              S_AXIS_CMD_tdata,
   input  wire                      S_AXIS_CMD_tvalid,
   output wire                      S_AXIS_CMD_tready,
+  
+  // =========================================================================
+  // AXI Stream Write Data Interface
+  // =========================================================================
+  input  wire [511:0]              S_AXIS_WDATA_tdata,
+  input  wire                      S_AXIS_WDATA_tvalid,
+  output wire                      S_AXIS_WDATA_tready,
   
   // =========================================================================
   // AXI Stream Read Data Interface
@@ -143,6 +143,36 @@ module sddt_core #(
     .s_axis_tvalid(S_AXIS_CMD_tvalid),
     // Status signals
     .wr_data_count_axis(cmd_fifo_wr_data_count)
+  );
+
+  // =========================================================================
+  // Write Data FIFO (Async)
+  // =========================================================================
+  localparam WDATA_FIFO_DEPTH = 16;
+  localparam WDATA_FIFO_WIDTH = 512;
+  localparam WDATA_FIFO_COUNT_WIDTH = $clog2(WDATA_FIFO_DEPTH)+1;
+  wire [WDATA_FIFO_COUNT_WIDTH-1:0] wdata_fifo_wr_data_count;
+  xpm_fifo_axis #(
+    .CLOCKING_MODE("independent_clock"),
+    .FIFO_DEPTH(WDATA_FIFO_DEPTH),
+    .TDATA_WIDTH(WDATA_FIFO_WIDTH),
+    .USE_ADV_FEATURES("1004"), // Valid and enable wr_data_count
+    .WR_DATA_COUNT_WIDTH(WDATA_FIFO_COUNT_WIDTH)
+  )
+  wdata_fifo (
+    // Master interface
+    .m_aclk(c0_ddr4_clk),
+    .m_axis_tready(1'b0),
+    .m_axis_tdata(),
+    .m_axis_tvalid(),
+    // Slave interface
+    .s_aclk(axi_aclk),
+    .s_aresetn(axi_aresetn),
+    .s_axis_tready(S_AXIS_WDATA_tready),
+    .s_axis_tdata(S_AXIS_WDATA_tdata),
+    .s_axis_tvalid(S_AXIS_WDATA_tvalid),
+    // Status signals
+    .wr_data_count_axis(wdata_fifo_wr_data_count)
   );
 
   // =========================================================================
@@ -309,103 +339,6 @@ module sddt_core #(
   );
 
   // Combine command and read data FIFO write data counts
-  assign state_i = {{(32-RDATA_FIFO_COUNT_WIDTH){1'b0}}, rdata_fifo_wr_data_count};
-
-
-  // // =========================================================================
-  // // Internal wires: DDR Interface <-> CMD Scheduler
-  // // =========================================================================
-  
-  // wire                       c0_ddr4_clk_i;
-  // wire                       c0_ddr4_rst_i;
-  // wire                       c0_init_calib_complete_i;
-  // wire                       dbg_clk_internal;
-  // wire [511:0]               dbg_bus_internal;
-
-  // assign c0_ddr4_clk              = c0_ddr4_clk_i;
-  // assign c0_ddr4_rst              = c0_ddr4_rst_i;
-  // assign c0_init_calib_complete   = c0_init_calib_complete_i;
-  // assign dbg_clk                  = dbg_clk_internal;
-  // assign dbg_bus                  = dbg_bus_internal;
-
-  // // DDR command interface
-  // wire [3:0]                ddr_write;
-  // wire [3:0]                ddr_read;
-  // wire [3:0]                ddr_pre;
-  // wire [3:0]                ddr_act;
-  // wire [3:0]                ddr_ref;
-  // wire [3:0]                ddr_zq;
-  // wire [3:0]                ddr_nop;
-  // wire [3:0]                ddr_ap;
-  // wire [3:0]                ddr_pall;
-  // wire [3:0]                ddr_half_bl;
-  // wire [4*BG_WIDTH-1:0]     ddr_bg;
-  // wire [4*BANK_WIDTH-1:0]   ddr_bank;
-  // wire [4*COL_WIDTH-1:0]    ddr_col;
-  // wire [4*ROW_WIDTH-1:0]    ddr_row;
-  // wire [511:0]              ddr_wdata;
-  
-  // // Read data interface
-  // wire [511:0]              rdData;
-  // wire [0:0]                rdDataEn;
-  
-  // // CAS signals (exposed for potential external use)
-  // wire [0:0]                mcRdCAS;
-  // wire [0:0]                mcWrCAS;
-
-  // // =========================================================================
-  // // SDDT Core Instance (axi4_read_data, axi4_write_data, axi4_instr)
-  // // =========================================================================
-  // cmd_scheduler cmd_scheduler_i (
-  //   // Clock and Reset
-  //   .clk                  (c0_ddr4_clk_i),
-  //   .rst                  (c0_ddr4_rst_i),
-    
-  //   // DDR Read Data Interface (from DDR Interface)
-  //   .ddr_rd_data              (rdData),
-  //   .ddr_rd_valid             (rdDataEn),
-    
-  //   // DDR Write Data Interface (to DDR Interface)
-  //   .ddr_wdata            (ddr_wdata),
-    
-  //   // DDR Command Interface (to DDR Interface)
-  //   .ddr_write            (ddr_write),
-  //   .ddr_read             (ddr_read),
-  //   .ddr_pre              (ddr_pre),
-  //   .ddr_act              (ddr_act),
-  //   .ddr_ref              (ddr_ref),
-  //   .ddr_zq               (ddr_zq),
-  //   .ddr_nop              (ddr_nop),
-  //   .ddr_ap               (ddr_ap),
-  //   .ddr_half_bl          (ddr_half_bl),
-  //   .ddr_pall             (ddr_pall),
-  //   .ddr_bg               (ddr_bg),
-  //   .ddr_bank             (ddr_bank),
-  //   .ddr_col              (ddr_col),
-  //   .ddr_row              (ddr_row),
-    
-  //   // AXI Stream C2H (to DMA S2MM)
-  //   .M_AXIS_C2H_tdata     (M_AXIS_C2H_tdata),
-  //   .M_AXIS_C2H_tvalid    (M_AXIS_C2H_tvalid),
-  //   .M_AXIS_C2H_tkeep     (M_AXIS_C2H_tkeep),
-  //   .M_AXIS_C2H_tlast     (M_AXIS_C2H_tlast),
-  //   .M_AXIS_C2H_tready    (M_AXIS_C2H_tready),
-    
-  //   // AXI Stream H2C Interface 0 (from DMA MM2S_0 - Write Data)
-  //   .S_AXIS_H2C_0_tdata   (S_AXIS_H2C_0_tdata),
-  //   .S_AXIS_H2C_0_tvalid  (S_AXIS_H2C_0_tvalid),
-  //   .S_AXIS_H2C_0_tready  (S_AXIS_H2C_0_tready),
-    
-  //   // AXI Stream Command Interface
-  //   .S_AXIS_CMD_tdata   (S_AXIS_CMD_tdata),
-  //   .S_AXIS_CMD_tvalid  (S_AXIS_CMD_tvalid),
-  //   .S_AXIS_CMD_tready  (S_AXIS_CMD_tready),
-    
-  //   // Debug ports
-  //   .err                  (err),
-  //   .latest_buf           (latest_buf),
-  //   .wdata_count          (wdata_count),
-  //   .rdata_count          (rdata_count)
-  // );
+  assign state_i = {{(16-WDATA_FIFO_COUNT_WIDTH){1'b0}}, wdata_fifo_wr_data_count, {(16-RDATA_FIFO_COUNT_WIDTH){1'b0}}, rdata_fifo_wr_data_count};
 
 endmodule

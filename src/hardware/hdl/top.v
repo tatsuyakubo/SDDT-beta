@@ -34,6 +34,9 @@ module top #(parameter tCK = 1500, SIM = "false")
   wire [127:0] axis_cmd_tdata;
   wire         axis_cmd_tready;
   wire         axis_cmd_tvalid;
+  wire [511:0] axis_wdata_tdata;
+  wire         axis_wdata_tready;
+  wire         axis_wdata_tvalid;
   wire [511:0] axis_rdata_tdata;
   wire [63:0]  axis_rdata_tkeep;
   wire         axis_rdata_tlast;
@@ -45,8 +48,6 @@ module top #(parameter tCK = 1500, SIM = "false")
   // =========================================================================
   // PS Interface Instance
   // =========================================================================
-  wire [511:0] axis_wdata_tdata;
-  wire         axis_wdata_tvalid;
   ps_interface ps_interface_i (
     // System signals
     .axi_aclk(axi_aclk),
@@ -57,7 +58,7 @@ module top #(parameter tCK = 1500, SIM = "false")
     .M_AXIS_CMD_tvalid(axis_cmd_tvalid),
     // AXI Stream Write Data Interface
     .M_AXIS_WDATA_tdata(axis_wdata_tdata),
-    .M_AXIS_WDATA_tready(1'b0),
+    .M_AXIS_WDATA_tready(axis_wdata_tready),
     .M_AXIS_WDATA_tvalid(axis_wdata_tvalid),
     // AXI Stream Read Data Interface
     .S_AXIS_RDATA_tdata(axis_rdata_tdata),
@@ -69,31 +70,6 @@ module top #(parameter tCK = 1500, SIM = "false")
     .gpio2_io_i(gpio2_io_i),
     .gpio2_io_o(gpio2_io_o)
   );
-  
-  // ps_interface_2 ps_interface_2_i (
-  //   // System signals
-  //   .axi_aclk(axi_aclk),
-  //   .axi_aresetn(axi_aresetn),
-  //   // AXI Stream Command Interface
-  //   .M_AXIS_CMD_tdata(axis_cmd_tdata),
-  //   .M_AXIS_CMD_tready(axis_cmd_tready),
-  //   .M_AXIS_CMD_tvalid(axis_cmd_tvalid),
-  //   // AXI Stream Write Data Interface
-  //   .M_AXIS_WDATA_tdata(axis_wdata_tdata),
-  //   .M_AXIS_WDATA_tready(1'b0),
-  //   .M_AXIS_WDATA_tvalid(axis_wdata_tvalid),
-  //   // AXI Stream Read Data Interface
-  //   .S_AXIS_RDATA_tdata(axis_rdata_tdata),
-  //   // .S_AXIS_RDATA_tlast(axis_rdata_tlast),
-  //   // .S_AXIS_RDATA_tkeep(axis_rdata_tkeep),
-  //   .S_AXIS_RDATA_tlast(1'b1),
-  //   .S_AXIS_RDATA_tkeep({64{1'b1}}),
-  //   .S_AXIS_RDATA_tvalid(axis_rdata_tvalid),
-  //   .S_AXIS_RDATA_tready(axis_rdata_tready),
-  //   // Debug signals
-  //   .gpio2_io_i(gpio2_io_i),
-  //   .gpio2_io_o(gpio2_io_o)
-  // );
 
   // =========================================================================
   // SDDT Core Instance
@@ -125,6 +101,10 @@ module top #(parameter tCK = 1500, SIM = "false")
     .S_AXIS_CMD_tdata(axis_cmd_tdata),
     .S_AXIS_CMD_tvalid(axis_cmd_tvalid),
     .S_AXIS_CMD_tready(axis_cmd_tready),
+    // Write Data FIFO interface
+    .S_AXIS_WDATA_tdata(axis_wdata_tdata),
+    .S_AXIS_WDATA_tvalid(axis_wdata_tvalid),
+    .S_AXIS_WDATA_tready(axis_wdata_tready),
     // Read Data FIFO interface
     .M_AXIS_RDATA_tdata(axis_rdata_tdata),
     .M_AXIS_RDATA_tkeep(axis_rdata_tkeep),
@@ -136,6 +116,32 @@ module top #(parameter tCK = 1500, SIM = "false")
     .state(gpio2_io_i)
   );
 
+  // =========================================================================
+
+  // ps_interface_2 ps_interface_2_i (
+  //   // System signals
+  //   .axi_aclk(axi_aclk),
+  //   .axi_aresetn(axi_aresetn),
+  //   // AXI Stream Command Interface
+  //   .M_AXIS_CMD_tdata(axis_cmd_tdata),
+  //   .M_AXIS_CMD_tready(axis_cmd_tready),
+  //   .M_AXIS_CMD_tvalid(axis_cmd_tvalid),
+  //   // AXI Stream Write Data Interface
+  //   .M_AXIS_WDATA_tdata(axis_wdata_tdata),
+  //   .M_AXIS_WDATA_tready(1'b0),
+  //   .M_AXIS_WDATA_tvalid(axis_wdata_tvalid),
+  //   // AXI Stream Read Data Interface
+  //   .S_AXIS_RDATA_tdata(axis_rdata_tdata),
+  //   // .S_AXIS_RDATA_tlast(axis_rdata_tlast),
+  //   // .S_AXIS_RDATA_tkeep(axis_rdata_tkeep),
+  //   .S_AXIS_RDATA_tlast(1'b1),
+  //   .S_AXIS_RDATA_tkeep({64{1'b1}}),
+  //   .S_AXIS_RDATA_tvalid(axis_rdata_tvalid),
+  //   .S_AXIS_RDATA_tready(axis_rdata_tready),
+  //   // Debug signals
+  //   .gpio2_io_i(gpio2_io_i),
+  //   .gpio2_io_o(gpio2_io_o)
+  // );
 
   // // Frontend control signals
   // wire softmc_fin;
@@ -277,36 +283,6 @@ module top #(parameter tCK = 1500, SIM = "false")
   // assign per_zq_init = 1'b0;
   // assign per_ref_init = 1'b0;
   // assign rbe_switch_mode = 1'b0;
-
-  // wire [31:0] cmd_data_fifo_count;
-
-  // // =========================================================================
-  // // PS Interface Instance (DMA Controller)
-  // // =========================================================================
-  // ps_interface ps_interface_i (
-
-  //   .M_AXIS_MM2S_0_tdata  (M_AXIS_MM2S_0_tdata),
-  //   .M_AXIS_MM2S_0_tready (M_AXIS_MM2S_0_tready),
-  //   .M_AXIS_MM2S_0_tvalid (M_AXIS_MM2S_0_tvalid),
-
-  //   .M_AXIS_CMD_tdata  (M_AXIS_CMD_tdata),
-  //   .M_AXIS_CMD_tkeep  (M_AXIS_CMD_tkeep),
-  //   .M_AXIS_CMD_tlast  (M_AXIS_CMD_tlast),
-  //   .M_AXIS_CMD_tready (M_AXIS_CMD_tready),
-  //   .M_AXIS_CMD_tvalid (M_AXIS_CMD_tvalid),
-  //   .cmd_data_fifo_count  (cmd_data_fifo_count),
-
-  //   .S_AXIS_S2MM_0_tdata  (S_AXIS_S2MM_0_tdata),
-  //   .S_AXIS_S2MM_0_tkeep  (S_AXIS_S2MM_0_tkeep),
-  //   .S_AXIS_S2MM_0_tlast  (S_AXIS_S2MM_0_tlast),
-  //   .S_AXIS_S2MM_0_tready (S_AXIS_S2MM_0_tready),
-  //   .S_AXIS_S2MM_0_tvalid (S_AXIS_S2MM_0_tvalid),
-  //   .axi_resetn           (axi_resetn),
-  //   .c0_ddr4_clk          (c0_ddr4_clk),
-  //   .axi_gpio_in          (axi_gpio_in),
-  //   .axi_gpio_in2         (axi_gpio_in2),
-  //   .axi_gpio_out         (axi_gpio_out)
-  // );
 
   // // =========================================================================
   // // User LED - Clock Counter
