@@ -3,10 +3,14 @@ module xpm_fifo_axis_wrapper (
     input aresetn,
 
     input [TDATA_WIDTH-1:0] S_AXIS_TDATA,
+    input [TDATA_WIDTH/8-1:0] S_AXIS_TKEEP,
+    input S_AXIS_TLAST,
     input S_AXIS_TVALID,
     output S_AXIS_TREADY,
 
     output [TDATA_WIDTH-1:0] M_AXIS_TDATA,
+    output [TDATA_WIDTH/8-1:0] M_AXIS_TKEEP,
+    output M_AXIS_TLAST,
     output M_AXIS_TVALID,
     input M_AXIS_TREADY,
     
@@ -45,20 +49,20 @@ module xpm_fifo_axis_wrapper (
     )
     xpm_fifo_axis_i (
       // Master Interface
-      .m_aclk(),                               // 1-bit input: Master Interface Clock: All signals on master interface are sampled on the rising edge
+      .m_aclk(aclk),                           // 1-bit input: Master Interface Clock: All signals on master interface are sampled on the rising edge
                                                   // of this clock.
       .m_axis_tready(M_AXIS_TREADY),           // 1-bit input: TREADY: Indicates that the slave can accept a transfer in the current cycle.
       .m_axis_tdata(M_AXIS_TDATA),             // TDATA_WIDTH-bit output: TDATA: The primary payload that is used to provide the data that is passing
                                                   // across the interface. The width of the data payload is an integer number of bytes.
       .m_axis_tdest(),                         // TDEST_WIDTH-bit output: TDEST: Provides routing information for the data stream.
       .m_axis_tid(),                           // TID_WIDTH-bit output: TID: The data stream identifier that indicates different streams of data.
-      .m_axis_tkeep(),                         // TDATA_WIDTH/8-bit output: TKEEP: The byte qualifier that indicates whether the content of the
+      .m_axis_tkeep(M_AXIS_TKEEP),             // TDATA_WIDTH/8-bit output: TKEEP: The byte qualifier that indicates whether the content of the
                                                   // associated byte of TDATA is processed as part of the data stream. Associated bytes that have the
                                                   // TKEEP byte qualifier deasserted are null bytes and can be removed from the data stream. For a
                                                   // 64-bit DATA, bit 0 corresponds to the least significant byte on DATA, and bit 7 corresponds to the
                                                   // most significant byte. For example: KEEP[0] = 1b, DATA[7:0] is not a NULL byte KEEP[7] = 0b,
                                                   // DATA[63:56] is a NULL byte
-      .m_axis_tlast(),                         // 1-bit output: TLAST: Indicates the boundary of a packet.
+      .m_axis_tlast(M_AXIS_TLAST),             // 1-bit output: TLAST: Indicates the boundary of a packet.
       .m_axis_tstrb(),                         // TDATA_WIDTH/8-bit output: TSTRB: The byte qualifier that indicates whether the content of the
                                                   // associated byte of TDATA is processed as a data byte or a position byte. For a 64-bit DATA, bit 0
                                                   // corresponds to the least significant byte on DATA, and bit 0 corresponds to the least significant
@@ -77,13 +81,13 @@ module xpm_fifo_axis_wrapper (
                                                   // across the interface. The width of the data payload is an integer number of bytes.
       .s_axis_tdest(),                         // TDEST_WIDTH-bit input: TDEST: Provides routing information for the data stream.
       .s_axis_tid(),                           // TID_WIDTH-bit input: TID: The data stream identifier that indicates different streams of data.
-      .s_axis_tkeep(),                         // TDATA_WIDTH/8-bit input: TKEEP: The byte qualifier that indicates whether the content of the
+      .s_axis_tkeep(S_AXIS_TKEEP),             // TDATA_WIDTH/8-bit input: TKEEP: The byte qualifier that indicates whether the content of the
                                                   // associated byte of TDATA is processed as part of the data stream. Associated bytes that have the
                                                   // TKEEP byte qualifier deasserted are null bytes and can be removed from the data stream. For a
                                                   // 64-bit DATA, bit 0 corresponds to the least significant byte on DATA, and bit 7 corresponds to the
                                                   // most significant byte. For example: KEEP[0] = 1b, DATA[7:0] is not a NULL byte KEEP[7] = 0b,
                                                   // DATA[63:56] is a NULL byte
-      .s_axis_tlast(),                         // 1-bit input: TLAST: Indicates the boundary of a packet.
+      .s_axis_tlast(S_AXIS_TLAST),             // 1-bit input: TLAST: Indicates the boundary of a packet.
       .s_axis_tstrb(),                         // TDATA_WIDTH/8-bit input: TSTRB: The byte qualifier that indicates whether the content of the
                                                   // associated byte of TDATA is processed as a data byte or a position byte. For a 64-bit DATA, bit 0
                                                   // corresponds to the least significant byte on DATA, and bit 0 corresponds to the least significant

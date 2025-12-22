@@ -149,8 +149,8 @@ set_property -dict {PACKAGE_PIN AB14  IOSTANDARD LVCMOS12    } [get_ports c0_ddr
 set_property -dict {PACKAGE_PIN M11 IOSTANDARD LVCMOS33    } [get_ports sys_rst ]; # CPU_RESET, active high
 #set_property -dict {PACKAGE_PIN M11 IOSTANDARD LVCMOS33    } [get_ports sys_rst_l ];
 
-set_property -dict {PACKAGE_PIN D5 IOSTANDARD LVCMOS33 } [get_ports user_led[0]];
-set_property -dict {PACKAGE_PIN D6 IOSTANDARD LVCMOS33 } [get_ports user_led[1]];
-set_property -dict {PACKAGE_PIN A5 IOSTANDARD LVCMOS33 } [get_ports user_led[2]];
-set_property -dict {PACKAGE_PIN B5 IOSTANDARD LVCMOS33 } [get_ports user_led[3]];
+#set_property -dict {PACKAGE_PIN D5 IOSTANDARD LVCMOS33 } [get_ports user_led[0]];
+#set_property -dict {PACKAGE_PIN D6 IOSTANDARD LVCMOS33 } [get_ports user_led[1]];
+#set_property -dict {PACKAGE_PIN A5 IOSTANDARD LVCMOS33 } [get_ports user_led[2]];
+#set_property -dict {PACKAGE_PIN B5 IOSTANDARD LVCMOS33 } [get_ports user_led[3]];
       

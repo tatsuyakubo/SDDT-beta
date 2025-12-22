@@ -59,6 +59,8 @@ module sddt_core #(
   // AXI Stream Read Data Interface
   // =========================================================================
   output wire [511:0]              M_AXIS_RDATA_tdata,
+  output wire [63:0]               M_AXIS_RDATA_tkeep,
+  output wire                      M_AXIS_RDATA_tlast,
   output wire                      M_AXIS_RDATA_tvalid,
   input  wire                      M_AXIS_RDATA_tready,
   
@@ -109,9 +111,9 @@ module sddt_core #(
   // =========================================================================
   // Internal Wires
   // =========================================================================
-  wire         m_axis_cmd_tready;
-  wire [127:0] m_axis_cmd_tdata;
-  wire         m_axis_cmd_tvalid;
+  wire         axis_cmd2instr_tready;
+  wire [127:0] axis_cmd2instr_tdata;
+  wire         axis_cmd2instr_tvalid;
 
   // =========================================================================
   // Command FIFO (Async)
@@ -130,12 +132,12 @@ module sddt_core #(
   cmd_fifo (
     // Master interface
     .m_aclk(c0_ddr4_clk),
-    .m_axis_tready(m_axis_cmd_tready),
-    .m_axis_tdata(m_axis_cmd_tdata),
-    .m_axis_tvalid(m_axis_cmd_tvalid),
+    .m_axis_tready(axis_cmd2instr_tready),
+    .m_axis_tdata(axis_cmd2instr_tdata),
+    .m_axis_tvalid(axis_cmd2instr_tvalid),
     // Slave interface
     .s_aclk(axi_aclk),
-    .s_aresetn(axi_aresetn),
+    .s_aresetn(axi_aresetn & ~c0_ddr4_rst & c0_init_calib_complete),
     .s_axis_tready(S_AXIS_CMD_tready),
     .s_axis_tdata(S_AXIS_CMD_tdata),
     .s_axis_tvalid(S_AXIS_CMD_tvalid),
@@ -170,9 +172,9 @@ module sddt_core #(
     .clk(c0_ddr4_clk),
     .rst(c0_ddr4_rst || ~c0_init_calib_complete),
     // AXI -> Instr
-    .S_AXIS_TDATA(m_axis_cmd_tdata),
-    .S_AXIS_TVALID(m_axis_cmd_tvalid),
-    .S_AXIS_TREADY(m_axis_cmd_tready),
+    .S_AXIS_TDATA(axis_cmd2instr_tdata),
+    .S_AXIS_TVALID(axis_cmd2instr_tvalid),
+    .S_AXIS_TREADY(axis_cmd2instr_tready),
     // Instr -> DDR4 Interface
     .ddr_write(ddr_write),
     .ddr_read(ddr_read),
@@ -203,8 +205,8 @@ module sddt_core #(
   wire         ddr4_ui_clk;
   wire         c0_ddr4_dll_off_clk;
   `endif
-  wire         mcRdCAS;
-  wire         mcWrCAS;
+  wire [0:0]   mcRdCAS;
+  wire [0:0]   mcWrCAS;
   ddr4_interface #(
     .DQ_WIDTH       (DQ_WIDTH),
     .CKE_WIDTH      (CKE_WIDTH),
@@ -291,13 +293,17 @@ module sddt_core #(
     .m_aclk(axi_aclk),
     .m_axis_tready(M_AXIS_RDATA_tready),
     .m_axis_tdata(M_AXIS_RDATA_tdata),
+    .m_axis_tkeep(M_AXIS_RDATA_tkeep),
+    .m_axis_tlast(M_AXIS_RDATA_tlast),
     .m_axis_tvalid(M_AXIS_RDATA_tvalid),
     // Slave interface
     .s_aclk(c0_ddr4_clk),
-    .s_aresetn(~c0_ddr4_rst & c0_init_calib_complete),
+    .s_aresetn(axi_aresetn & ~c0_ddr4_rst & c0_init_calib_complete),
     .s_axis_tready(),
     .s_axis_tdata(rdData),
-    .s_axis_tvalid(rdDataEn),
+    .s_axis_tlast(1'b1),
+    .s_axis_tkeep({64{1'b1}}),
+    .s_axis_tvalid(rdDataEn[0]),
     // Status signals
     .wr_data_count_axis(rdata_fifo_wr_data_count)
   );
