@@ -61,10 +61,8 @@ module top #(parameter tCK = 1500, SIM = "false")
     .M_AXIS_WDATA_tvalid(axis_wdata_tvalid),
     // AXI Stream Read Data Interface
     .S_AXIS_RDATA_tdata(axis_rdata_tdata),
-    // .S_AXIS_RDATA_tlast(axis_rdata_tlast),
-    // .S_AXIS_RDATA_tkeep(axis_rdata_tkeep),
-    .S_AXIS_RDATA_tlast(1'b1),
-    .S_AXIS_RDATA_tkeep({64{1'b1}}),
+    .S_AXIS_RDATA_tlast(axis_rdata_tlast),
+    .S_AXIS_RDATA_tkeep(axis_rdata_tkeep),
     .S_AXIS_RDATA_tvalid(axis_rdata_tvalid),
     .S_AXIS_RDATA_tready(axis_rdata_tready),
     // Debug signals

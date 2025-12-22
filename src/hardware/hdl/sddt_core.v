@@ -137,7 +137,7 @@ module sddt_core #(
     .m_axis_tvalid(axis_cmd2instr_tvalid),
     // Slave interface
     .s_aclk(axi_aclk),
-    .s_aresetn(axi_aresetn & ~c0_ddr4_rst & c0_init_calib_complete),
+    .s_aresetn(axi_aresetn),
     .s_axis_tready(S_AXIS_CMD_tready),
     .s_axis_tdata(S_AXIS_CMD_tdata),
     .s_axis_tvalid(S_AXIS_CMD_tvalid),
@@ -298,7 +298,7 @@ module sddt_core #(
     .m_axis_tvalid(M_AXIS_RDATA_tvalid),
     // Slave interface
     .s_aclk(c0_ddr4_clk),
-    .s_aresetn(axi_aresetn & ~c0_ddr4_rst & c0_init_calib_complete),
+    .s_aresetn(~c0_ddr4_rst & c0_init_calib_complete),
     .s_axis_tready(),
     .s_axis_tdata(rdData),
     .s_axis_tlast(1'b1),
