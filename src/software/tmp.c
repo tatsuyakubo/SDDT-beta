@@ -7,34 +7,35 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define AXI_DMA_0_BASE     0xA0000000
-#define AXI_DMA_0_SIZE     0x00010000 // 64KB
-#define AXI_BRIDGE_BASE    0xB0000000
-#define AXI_BRIDGE_SIZE    0x00010000 // 64KB (NOTE: Mapped memory size, not FIFO size)
+// Utilities
+#define REG_WRITE(addr, val) (*(volatile uint32_t *)(addr) = (val))
+#define REG_READ(addr)       (*(volatile uint32_t *)(addr))
 
 // DMA Register Offsets
 #define MM2S_DMACR      0x00 // Control
 #define MM2S_DMASR      0x04 // Status
 #define MM2S_SA         0x18 // Source Address
-#define MM2S_SA_MSB     0x1C
-#define MM2S_LENGTH     0x28
-#define S2MM_DMACR      0x30
-#define S2MM_DMASR      0x34
-#define S2MM_DA         0x48
-#define S2MM_DA_MSB     0x4C
-#define S2MM_LENGTH     0x58
+#define MM2S_SA_MSB     0x1C // 32bit addressing
+#define MM2S_LENGTH     0x28 // Length of the transfer
+#define S2MM_DMACR      0x30 // Control
+#define S2MM_DMASR      0x34 // Status
+#define S2MM_DA         0x48 // Destination Address
+#define S2MM_DA_MSB     0x4C // 32bit addressing
+#define S2MM_LENGTH     0x58 // Length of the transfer
 
-// MMIO Register Offsets
-#define REG_ISR         0x00 // Interrupt Status Register
-#define REG_TDFV        0x0C // Transmit Data FIFO Vacancy
-#define REG_TLR         0x14 // Transmit Length Register
-#define REG_TDFR        0x18 // Transmit Data FIFO Reset
-// #define REG_TDFD        0x10 // Transmit Data FIFO Data
-#define FIFO_RESET_KEY  0x000000A5
+// GPIO Register Offsets
+#define GPIO_DATA       0x00  // Channel 1 Data Register
+#define GPIO_TRI        0x04  // Channel 1 Tri-state Register (0=output, 1=input)
+#define GPIO2_DATA      0x08  // Channel 2 Data Register
+#define GPIO2_TRI       0x0C  // Channel 2 Tri-state Register (0=output, 1=input)
 
-// Utilities
-#define REG_WRITE(addr, val) (*(volatile uint32_t *)(addr) = (val))
-#define REG_READ(addr)       (*(volatile uint32_t *)(addr))
+// Physical Addresses
+#define AXI_DMA_0_BASE  0xA0000000
+#define AXI_DMA_0_SIZE  0x00010000 // 64KB
+#define AXI_GPIO_BASE   0x80000000
+#define AXI_GPIO_SIZE   0x00010000 // 64KB
+#define AXI_BRIDGE_BASE 0xB0000000
+#define AXI_BRIDGE_SIZE 0x00010000 // 64KB (NOTE: Mapped memory size, not FIFO size)
 
 // Timing Parameters
 // tCK = 1.5ns (666MHz)
@@ -52,6 +53,7 @@ int udmabuf_fd;
 void *udmabuf_vptr;
 unsigned int udmabuf_size;
 unsigned long udmabuf_phys_addr;
+void *gpio_vptr;
 // Bridge index tracking (for circular buffer)
 static uint32_t bridge_32bit_index = 0;
 static uint32_t bridge_64bit_index = 0;
@@ -116,6 +118,7 @@ int setup_hardware() {
     dma0_vptr = NULL;
     bridge_vptr = NULL;
     udmabuf_vptr = NULL;
+    gpio_vptr = NULL;
     // Open /dev/mem
     if ((mem_fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
         perror("Failed to open /dev/mem");
@@ -139,6 +142,13 @@ int setup_hardware() {
     bridge_vptr = mmap(NULL, AXI_BRIDGE_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, bridge_fd, AXI_BRIDGE_BASE);
     if (bridge_vptr == MAP_FAILED) {
         perror("Failed to map Bridge");
+        cleanup_mem_mappings();
+        return -1;
+    }
+    // Map GPIO
+    gpio_vptr = mmap(NULL, AXI_GPIO_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, AXI_GPIO_BASE);
+    if (gpio_vptr == MAP_FAILED) {
+        perror("Failed to map GPIO");
         cleanup_mem_mappings();
         return -1;
     }
@@ -200,6 +210,44 @@ void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     REG_WRITE(base + S2MM_LENGTH, length_bytes);
     // Wait for idle (bit 1)
     while (!(REG_READ(base + S2MM_DMASR) & 0x02));
+}
+
+// GPIO Read
+uint32_t gpio_read(int channel, bool change_mode) {
+    uint32_t tri_offset, data_offset;
+    if (channel == 1) {
+        tri_offset = GPIO_TRI;
+        data_offset = GPIO_DATA;
+    } else if (channel == 2) {
+        tri_offset = GPIO2_TRI;
+        data_offset = GPIO2_DATA;
+    } else {
+        fprintf(stderr, "Invalid channel: %d\n", channel);
+        exit(1);
+    }
+    if (change_mode) {
+        REG_WRITE((volatile uint8_t *)gpio_vptr + tri_offset, 0xFFFFFFFF);
+    }
+    return REG_READ((volatile uint8_t *)gpio_vptr + data_offset);
+}
+
+// GPIO Write
+void gpio_write(int channel, uint32_t data, bool change_mode) {
+    uint32_t tri_offset, data_offset;
+    if (channel == 1) {
+        tri_offset = GPIO_TRI;
+        data_offset = GPIO_DATA;
+    } else if (channel == 2) {
+        tri_offset = GPIO2_TRI;
+        data_offset = GPIO2_DATA;
+    } else {
+        fprintf(stderr, "Invalid channel: %d\n", channel);
+        exit(1);
+    }
+    if (change_mode) {
+        REG_WRITE((volatile uint8_t *)gpio_vptr + tri_offset, 0x00000000);
+    }
+    REG_WRITE((volatile uint8_t *)gpio_vptr + data_offset, data);
 }
 
 // Command Send (64-bit)
@@ -302,12 +350,19 @@ uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
     bank_addr &= 0xF; // 4 bits
     col_addr &= 0x3FF; // 10 bits
     uint32_t cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
+
     // Set data
-    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
-    for (int i = 0; i < 16; i++) {
-        ptr[i] = buffer[i];
-    }
-    dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+
+    // // Original
+    // uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+    // for (int i = 0; i < 16; i++) {
+    //     ptr[i] = buffer[i];
+    // }
+    // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+
+    // GPIO
+    gpio_write(2, buffer[0], false);
+
     // Send command
     cmd_send(cmd, interval);
     uint32_t nck = 1 + interval;
@@ -322,57 +377,74 @@ uint32_t rf(uint32_t interval, bool strict) {
     return nck;
 }
 
+void debug_gpio() {
+    uint32_t gpio_data = gpio_read(1, false);
+    printf("gpio 1 data: %d\n", gpio_data);
+}
+
 int main(int argc, char *argv[]) {
     if (setup_hardware() != 0) return -1;
-    printf("Hardware mapped successfully.\n");
+    printf("Hardware mapped successfully.\n\n");
 
     int bank_addr = 0;
     int row_addr = 0;
     int col_addr = 0;
     uint32_t cmd = 0;
 
+    // gpio_write(2, 0x12345678, false);
+
+    // Write col = 0
     pre(bank_addr, 0, 0, 9, 0);
     act(bank_addr, row_addr, 0, 9, 0);
 
+    // cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
+    // cmd_send(cmd, 9);
+    uint32_t write_buffer[16] = {0x12345878};
+    wr(write_buffer, bank_addr, col_addr, 9, 0);
+
+    // Read col = 0
+    pre(bank_addr, 0, 0, 9, 0);
+    act(bank_addr, row_addr, 0, 9, 0);
+    cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
+    cmd_send(cmd, 9);
+
+    // Receive data
+    int n_words = 16;
+    uint32_t read_buffer[n_words];
+    dma_recv(dma0_vptr, udmabuf_phys_addr, n_words * sizeof(uint32_t)); // 512 bits
+    // Copy data to buffer
+    memcpy(read_buffer, (uint32_t *)udmabuf_vptr, n_words * sizeof(uint32_t)); // 512 bits, 64 bytes
+    for (int i = 0; i < n_words; i++) {
+        printf("%08x ", read_buffer[i]);
+    }
+    printf("\n");
+    printf("\n");
+
+    debug_gpio();
+
+    cleanup_hardware();
+    return 0;
+
+    // Receive data and print
     // Set data1
-    uint32_t write_buffer1[16] = {1, 2};
+    uint32_t write_buffer1[16] = {1, 3};
     uint32_t *ptr = (uint32_t *)udmabuf_vptr;
     for (int i = 0; i < 16; i++) {
         ptr[i] = write_buffer1[i];
     }
     dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+
     // Set data2
     uint32_t write_buffer2[16] = {3, 4};
     for (int i = 0; i < 16; i++) {
         ptr[i] = write_buffer2[i];
     }
     dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
-    // Set data3
-    uint32_t write_buffer3[16] = {5, 6};
-    for (int i = 0; i < 16; i++) {
-        ptr[i] = write_buffer3[i];
-    }
-    dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
 
-    col_addr = 0;
-    cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
-    // Send command
-    cmd_send(cmd, 9);
-
-    col_addr = 64;
-    cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
-    // Send command
-    cmd_send(cmd, 9);
-
-    col_addr = 32;
-    cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
-    // Send command
-    cmd_send(cmd, 9);
+    debug_gpio();
 
     pre(bank_addr, 0, 0, 9, 0);
     act(bank_addr, row_addr, 0, 9, 0);
-
-    printf("Here4\n");
  
     // Read col = 0
     bank_addr = 0;
@@ -382,60 +454,10 @@ int main(int argc, char *argv[]) {
     cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
     cmd_send(cmd, 9);
 
-    // Read col = 64
-    col_addr = 64;
-    cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
-    cmd_send(cmd, 9);
+    debug_gpio();
 
-    // Read col = 32
-    col_addr = 32;
-    cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
-    cmd_send(cmd, 9);
-
-    printf("Here5\n");
-
-
-    // Implementation A
-    uint32_t read_buffer[16];
-    // Receive data
-    dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
-    // Copy data to buffer
-    memcpy(read_buffer, (uint32_t *)udmabuf_vptr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
-    for (int i = 0; i < 16; i++) {
-        printf("%08x ", read_buffer[i]);
-    }
-    printf("\n");
-
-    dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
-    memcpy(read_buffer, (uint32_t *)udmabuf_vptr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
-    for (int i = 0; i < 16; i++) {
-        printf("%08x ", read_buffer[i]);
-    }
-    printf("\n");
-
-    dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
-    memcpy(read_buffer, (uint32_t *)udmabuf_vptr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
-    for (int i = 0; i < 16; i++) {
-        printf("%08x ", read_buffer[i]);
-    }
-    printf("\n");
-
-    // // Implemenatation B
-    // int n_cols = 2;
-    // uint32_t read_buffer[n_cols*16];
-    // // Receive data
-    // dma_recv(dma0_vptr, udmabuf_phys_addr, n_cols*16 * sizeof(uint32_t)); // 512 bits
-    // // Copy data to buffer
-    // memcpy(read_buffer, (uint32_t *)udmabuf_vptr, n_cols*16 * sizeof(uint32_t)); // 512 bits, 64 bytes * n_cols
-    // for (int i = 0; i < n_cols; i++) {
-    //     for (int i = 0; i < 16; i++) {
-    //         printf("%08x ", read_buffer[i]);
-    //     }
-    //     printf("\n");
-    // }
-
+    debug_gpio();
 
     cleanup_hardware();
-
     return 0;
 }

@@ -7,34 +7,35 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define AXI_DMA_0_BASE     0xA0000000
-#define AXI_DMA_0_SIZE     0x00010000 // 64KB
-#define AXI_BRIDGE_BASE    0xB0000000
-#define AXI_BRIDGE_SIZE    0x00010000 // 64KB (NOTE: Mapped memory size, not FIFO size)
+// Utilities
+#define REG_WRITE(addr, val) (*(volatile uint32_t *)(addr) = (val))
+#define REG_READ(addr)       (*(volatile uint32_t *)(addr))
 
 // DMA Register Offsets
 #define MM2S_DMACR      0x00 // Control
 #define MM2S_DMASR      0x04 // Status
 #define MM2S_SA         0x18 // Source Address
-#define MM2S_SA_MSB     0x1C
-#define MM2S_LENGTH     0x28
-#define S2MM_DMACR      0x30
-#define S2MM_DMASR      0x34
-#define S2MM_DA         0x48
-#define S2MM_DA_MSB     0x4C
-#define S2MM_LENGTH     0x58
+#define MM2S_SA_MSB     0x1C // 32bit addressing
+#define MM2S_LENGTH     0x28 // Length of the transfer
+#define S2MM_DMACR      0x30 // Control
+#define S2MM_DMASR      0x34 // Status
+#define S2MM_DA         0x48 // Destination Address
+#define S2MM_DA_MSB     0x4C // 32bit addressing
+#define S2MM_LENGTH     0x58 // Length of the transfer
 
-// MMIO Register Offsets
-#define REG_ISR         0x00 // Interrupt Status Register
-#define REG_TDFV        0x0C // Transmit Data FIFO Vacancy
-#define REG_TLR         0x14 // Transmit Length Register
-#define REG_TDFR        0x18 // Transmit Data FIFO Reset
-// #define REG_TDFD        0x10 // Transmit Data FIFO Data
-#define FIFO_RESET_KEY  0x000000A5
+// GPIO Register Offsets
+#define GPIO_DATA       0x00  // Channel 1 Data Register
+#define GPIO_TRI        0x04  // Channel 1 Tri-state Register (0=output, 1=input)
+#define GPIO2_DATA      0x08  // Channel 2 Data Register
+#define GPIO2_TRI       0x0C  // Channel 2 Tri-state Register (0=output, 1=input)
 
-// Utilities
-#define REG_WRITE(addr, val) (*(volatile uint32_t *)(addr) = (val))
-#define REG_READ(addr)       (*(volatile uint32_t *)(addr))
+// Physical Addresses
+#define AXI_DMA_0_BASE  0xA0000000
+#define AXI_DMA_0_SIZE  0x00010000 // 64KB
+#define AXI_GPIO_BASE   0x80000000
+#define AXI_GPIO_SIZE   0x00010000 // 64KB
+#define AXI_BRIDGE_BASE 0xB0000000
+#define AXI_BRIDGE_SIZE 0x00010000 // 64KB (NOTE: Mapped memory size, not FIFO size)
 
 // Timing Parameters
 // tCK = 1.5ns (666MHz)
@@ -52,6 +53,7 @@ int udmabuf_fd;
 void *udmabuf_vptr;
 unsigned int udmabuf_size;
 unsigned long udmabuf_phys_addr;
+void *gpio_vptr;
 // Bridge index tracking (for circular buffer)
 static uint32_t bridge_32bit_index = 0;
 static uint32_t bridge_64bit_index = 0;
@@ -116,6 +118,7 @@ int setup_hardware() {
     dma0_vptr = NULL;
     bridge_vptr = NULL;
     udmabuf_vptr = NULL;
+    gpio_vptr = NULL;
     // Open /dev/mem
     if ((mem_fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
         perror("Failed to open /dev/mem");
@@ -139,6 +142,13 @@ int setup_hardware() {
     bridge_vptr = mmap(NULL, AXI_BRIDGE_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, bridge_fd, AXI_BRIDGE_BASE);
     if (bridge_vptr == MAP_FAILED) {
         perror("Failed to map Bridge");
+        cleanup_mem_mappings();
+        return -1;
+    }
+    // Map GPIO
+    gpio_vptr = mmap(NULL, AXI_GPIO_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, AXI_GPIO_BASE);
+    if (gpio_vptr == MAP_FAILED) {
+        perror("Failed to map GPIO");
         cleanup_mem_mappings();
         return -1;
     }
@@ -200,6 +210,44 @@ void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     REG_WRITE(base + S2MM_LENGTH, length_bytes);
     // Wait for idle (bit 1)
     while (!(REG_READ(base + S2MM_DMASR) & 0x02));
+}
+
+// GPIO Read
+uint32_t gpio_read(int channel, bool change_mode) {
+    uint32_t tri_offset, data_offset;
+    if (channel == 1) {
+        tri_offset = GPIO_TRI;
+        data_offset = GPIO_DATA;
+    } else if (channel == 2) {
+        tri_offset = GPIO2_TRI;
+        data_offset = GPIO2_DATA;
+    } else {
+        fprintf(stderr, "Invalid channel: %d\n", channel);
+        exit(1);
+    }
+    if (change_mode) {
+        REG_WRITE((volatile uint8_t *)gpio_vptr + tri_offset, 0xFFFFFFFF);
+    }
+    return REG_READ((volatile uint8_t *)gpio_vptr + data_offset);
+}
+
+// GPIO Write
+void gpio_write(int channel, uint32_t data, bool change_mode) {
+    uint32_t tri_offset, data_offset;
+    if (channel == 1) {
+        tri_offset = GPIO_TRI;
+        data_offset = GPIO_DATA;
+    } else if (channel == 2) {
+        tri_offset = GPIO2_TRI;
+        data_offset = GPIO2_DATA;
+    } else {
+        fprintf(stderr, "Invalid channel: %d\n", channel);
+        exit(1);
+    }
+    if (change_mode) {
+        REG_WRITE((volatile uint8_t *)gpio_vptr + tri_offset, 0x00000000);
+    }
+    REG_WRITE((volatile uint8_t *)gpio_vptr + data_offset, data);
 }
 
 // Command Send (64-bit)
@@ -302,12 +350,19 @@ uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
     bank_addr &= 0xF; // 4 bits
     col_addr &= 0x3FF; // 10 bits
     uint32_t cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
+
     // Set data
-    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
-    for (int i = 0; i < 16; i++) {
-        ptr[i] = buffer[i];
-    }
-    dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+
+    // // Original
+    // uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+    // for (int i = 0; i < 16; i++) {
+    //     ptr[i] = buffer[i];
+    // }
+    // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+
+    // GPIO
+    gpio_write(2, buffer[0], false);
+
     // Send command
     cmd_send(cmd, interval);
     uint32_t nck = 1 + interval;
