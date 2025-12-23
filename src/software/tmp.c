@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <time.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -182,34 +183,96 @@ void cleanup_hardware() {
     cleanup_mem_mappings();
 }
 
-// DMA Transfer (MM2S: Memory to Stream / Send)
-void dma_send(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
+// DMA Transfer Start (MM2S: Memory to Stream / Send)
+void dma_send_start(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     volatile uint8_t *base = (volatile uint8_t *)dma_base;
-    // Run/Stop bit = 1
+    // Ensure Run/Stop bit is 1
     uint32_t cr = REG_READ(base + MM2S_DMACR);
-    REG_WRITE(base + MM2S_DMACR, cr | 1);
+    if (!(cr & 1)) {
+        REG_WRITE(base + MM2S_DMACR, cr | 1);
+    }
     // Set source address
     REG_WRITE(base + MM2S_SA, phys_addr);
     REG_WRITE(base + MM2S_SA_MSB, 0); // 32bit addressing
     // Set length (starts transfer)
     REG_WRITE(base + MM2S_LENGTH, length_bytes);
-    // Wait for idle (bit 1)
-    while (!(REG_READ(base + MM2S_DMASR) & 0x02));
 }
 
-// DMA Transfer (S2MM: Stream to Memory / Receive)
-void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
+// DMA Transfer Wait (MM2S: Memory to Stream / Send)
+void dma_send_wait(void *dma_base) {
     volatile uint8_t *base = (volatile uint8_t *)dma_base;
-    // Run/Stop bit = 1
+    uint32_t timeout = 10000000;
+    while (!(REG_READ(base + MM2S_DMASR) & 0x02) && --timeout);
+    if (timeout == 0) {
+        uint32_t final_status = REG_READ(base + MM2S_DMASR);
+        uint32_t final_cr = REG_READ(base + MM2S_DMACR);
+        printf("\nDMA S2MM Timed out!\n");
+        printf("Final DMACR: 0x%08X\n", final_cr);
+        printf("Final DMASR: 0x%08X\n", final_status);
+        printf("  Halted (bit 0): %d\n", (final_status >> 0) & 1);
+        printf("  Idle (bit 1): %d\n", (final_status >> 1) & 1);
+        printf("  SG_Incld (bit 2): %d\n", (final_status >> 2) & 1);
+        printf("  DMA Internal Error (bit 3): %d\n", (final_status >> 3) & 1);
+        printf("  DMA Slave Error (bit 4): %d\n", (final_status >> 4) & 1);
+        printf("  DMA Decode Error (bit 5): %d\n", (final_status >> 5) & 1);
+        printf("  IOC_Irq (bit 12): %d\n", (final_status >> 12) & 1);
+        printf("  Dly_Irq (bit 13): %d\n", (final_status >> 13) & 1);
+        printf("  Err_Irq (bit 14): %d\n", (final_status >> 14) & 1);
+        fprintf(stderr, "DMA S2MM Timed out! Status: 0x%08X\n", final_status);
+        exit(1);
+    }
+}
+
+// DMA Transfer (MM2S: Memory to Stream / Send)
+void dma_send(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
+    dma_send_start(dma_base, phys_addr, length_bytes);
+    dma_send_wait(dma_base);
+}
+
+// DMA Transfer Start (S2MM: Stream to Memory / Receive)
+void dma_recv_start(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
+    volatile uint8_t *base = (volatile uint8_t *)dma_base;
+    // Ensure Run/Stop bit is 1
     uint32_t cr = REG_READ(base + S2MM_DMACR);
-    REG_WRITE(base + S2MM_DMACR, cr | 1);
+    if (!(cr & 1)) {
+        REG_WRITE(base + S2MM_DMACR, cr | 1);
+    }
     // Set destination address
     REG_WRITE(base + S2MM_DA, phys_addr);
     REG_WRITE(base + S2MM_DA_MSB, 0); // 32bit addressing
     // Set length (starts transfer)
     REG_WRITE(base + S2MM_LENGTH, length_bytes);
-    // Wait for idle (bit 1)
-    while (!(REG_READ(base + S2MM_DMASR) & 0x02));
+}
+
+// DMA Transfer Wait (S2MM: Stream to Memory / Receive)
+void dma_recv_wait(void *dma_base) {
+    volatile uint8_t *base = (volatile uint8_t *)dma_base;
+    uint32_t timeout = 10000000;
+    while (!(REG_READ(base + S2MM_DMASR) & 0x02) && --timeout);
+    if (timeout == 0) {
+        uint32_t final_status = REG_READ(base + S2MM_DMASR);
+        uint32_t final_cr = REG_READ(base + S2MM_DMACR);
+        printf("\nDMA S2MM Timed out!\n");
+        printf("Final DMACR: 0x%08X\n", final_cr);
+        printf("Final DMASR: 0x%08X\n", final_status);
+        printf("  Halted (bit 0): %d\n", (final_status >> 0) & 1);
+        printf("  Idle (bit 1): %d\n", (final_status >> 1) & 1);
+        printf("  SG_Incld (bit 2): %d\n", (final_status >> 2) & 1);
+        printf("  DMA Internal Error (bit 3): %d\n", (final_status >> 3) & 1);
+        printf("  DMA Slave Error (bit 4): %d\n", (final_status >> 4) & 1);
+        printf("  DMA Decode Error (bit 5): %d\n", (final_status >> 5) & 1);
+        printf("  IOC_Irq (bit 12): %d\n", (final_status >> 12) & 1);
+        printf("  Dly_Irq (bit 13): %d\n", (final_status >> 13) & 1);
+        printf("  Err_Irq (bit 14): %d\n", (final_status >> 14) & 1);
+        fprintf(stderr, "DMA S2MM Timed out! Status: 0x%08X\n", final_status);
+        exit(1);
+    }
+}
+
+// DMA Transfer (S2MM: Stream to Memory / Receive)
+void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
+    dma_recv_start(dma_base, phys_addr, length_bytes);
+    dma_recv_wait(dma_base);
 }
 
 // GPIO Read
@@ -370,6 +433,86 @@ uint32_t rf(uint32_t interval, bool strict) {
     return nck;
 }
 
+// Write Row
+uint32_t write_row(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr) {
+    uint32_t nck = 0;
+    nck += pre(bank_addr, rank_addr, false, nRP, false);
+    nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
+    for (int i = 0; i < 128; i++) {
+        nck += wr(data_buf+i*16, bank_addr, i*8, nCCD_L, false);
+    }
+    return nck;
+}
+
+// Write Row
+uint32_t write_row_batch(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr) {
+    uint32_t nck = 0;
+    nck += pre(bank_addr, rank_addr, false, nRP, false);
+    nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
+    // Batched data transfer start
+    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+    for (int i = 0; i < 128; i++) {
+        for (int j = 0; j < 16; j++) {
+            ptr[i*16+j] = data_buf[i*16+j];
+        }
+    }
+    dma_send_start(dma0_vptr, udmabuf_phys_addr, 16 * 128 * sizeof(uint32_t)); // Batch transfer
+    // Issue WR commands
+    bank_addr &= 0xF; // 4 bits
+    for (int i = 0; i < 128; i++) {
+        int col_addr = i*8 & 0x3FF;
+        uint32_t cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
+        // Send command
+        cmd_send(cmd, nCCD_L);
+        nck += 1 + nCCD_L;
+    }
+    // Wait for DMA transfer completion
+    dma_send_wait(dma0_vptr);
+    return nck;
+}
+
+// Read Row
+uint32_t read_row(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr) {
+    uint32_t nck = 0;
+    nck += pre(bank_addr, rank_addr, false, nRP, false);
+    nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
+    for (int i = 0; i < 128; i++) {
+        nck += rd(data_buf+i*16, bank_addr, i*8, nCCD_L, false);
+    }
+    return nck;
+}
+
+// // Read Row Batch
+// uint32_t read_row_batch(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr) {
+//     uint32_t nck = 0;
+//     nck += pre(bank_addr, rank_addr, false, nRP, false);
+//     nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
+//     int n_batches = 16; // the max value of n_batches is equal to the RDATA FIFO depth.
+//     for (int i = 0; i < 128/n_batches; i++) {
+//         // Issue RD commands
+//         for (int j = 0; j < n_batches; j++) {
+//             uint32_t col_addr = (i*n_batches+j)*8 & 0x3FF;
+//             uint32_t rd_cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
+//             cmd_send(rd_cmd, nCCD_L);
+//             nck += 1 + nCCD_L;
+//         }
+//         // Batched DMA transfer start
+//         dma_recv(dma0_vptr, udmabuf_phys_addr, n_batches * 16 * sizeof(uint32_t)); // 512 bits * n_batches
+//         // Copy data to buffer
+//         memcpy(data_buf+i*n_batches*16, (uint32_t *)udmabuf_vptr, n_batches * 16 * sizeof(uint32_t)); // 512 bits * n_batches, 64 bytes * n_batches
+//     }
+//     return nck;
+// }
+
+// All Bank Refresh
+uint32_t all_bank_refresh(uint8_t rank_addr) {
+    uint32_t nck = 0;
+    nck += pre(0, rank_addr, true, nRP, false); // precharge all banks
+    nck += rf(nRFC, false); // refresh
+    return nck;
+}
+
+// Debug GPIO
 void debug_gpio() {
     uint32_t gpio_data = gpio_read(1, false);
     uint8_t cmd_fifo_count   = (gpio_data >> 16) & 0xFF;
@@ -382,86 +525,157 @@ int main(int argc, char *argv[]) {
     if (setup_hardware() != 0) return -1;
     printf("Hardware mapped successfully.\n\n");
 
-    int bank_addr = 0;
-    int row_addr = 0;
-    int col_addr = 0;
-    uint32_t cmd = 0;
-
-    // Write col = 0
-    pre(bank_addr, 0, 0, 9, 0);
-    act(bank_addr, row_addr, 0, 9, 0);
-
-    uint32_t write_buffer[16] = {0x12};
-
-    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
-    for (int i = 0; i < 16; i++) {
-        ptr[i] = write_buffer[i];
+    uint32_t write_buffer[128*16];
+    for (int i = 0; i < 128*16; i++) {
+        write_buffer[i] = i;
     }
-    // // Send wdata
-    // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+    uint32_t read_buffer[128*16];
+    for (int i = 0; i < 128*16; i++) {
+        read_buffer[i] = 0;
+    }
 
-    // // Send WR command
-    // cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
+    int n_batches = 128;
+    int n_rows = 512;
+
+    int rank_addr = 0;
+    int bank_addr = 0;
+
+    /*** Start operations ***/
+    printf("Starting operations...\n");
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    int nck = 0;
+    for (int row_addr = 0; row_addr < n_rows; row_addr++) {
+        nck += write_row_batch(write_buffer, bank_addr, row_addr, rank_addr);
+    }
+    /*** End operations ***/
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    printf("Stopped operations.\n");
+    double latency_s = (end.tv_sec - start.tv_sec) + 
+                        (end.tv_nsec - start.tv_nsec) * 1e-9;
+    double ideal_latency_s = nck * 1.5e-9;
+    printf("Time taken: %f seconds\n", latency_s);
+    printf("Overhead: %fx slower than ideal\n", latency_s / ideal_latency_s);
+    printf("\n");
+
+    /*** Start operations ***/
+    printf("Starting operations...\n");
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    nck = 0;
+    for (int row_addr = 0; row_addr < n_rows; row_addr++) {
+        nck += read_row(read_buffer, bank_addr, row_addr, rank_addr);
+    }
+    /*** End operations ***/
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    printf("Stopped operations.\n");
+    latency_s = (end.tv_sec - start.tv_sec) + 
+                        (end.tv_nsec - start.tv_nsec) * 1e-9;
+    ideal_latency_s = nck * 1.5e-9;
+    printf("Time taken: %f seconds\n", latency_s);
+    printf("Overhead: %fx slower than ideal\n", latency_s / ideal_latency_s);
+    printf("\n");
+
+    // for (int i = 0; i < 128; i++) {
+    //     for (int j = 0; j < 16; j++) {
+    //         printf("%08x ", read_buffer[i*16+j]);
+    //     }
+    //     printf("\n");
+    // }
+    // printf("\n");
+
+    debug_gpio();
+
+    int row_addr = 0;
+    for (int i = 0; i < 128; i++) {
+        for (int j = 0; j < 16; j++) {
+            if (read_buffer[i*16+j] != write_buffer[i*16+j]) {
+                printf("Error: Data mismatch at rank %u, bank %u, row %u: %08x != %08x\n", rank_addr, bank_addr, row_addr, read_buffer[i*16+j], write_buffer[i*16+j]);
+                return -1;
+            }
+        }
+    }
+    printf("Data verification done.\n");
+
+    cleanup_hardware();
+    return 0;
+
+    // // Read col = 0
+    // int row_addr = 0;
+    // int col_addr = 0;
+    // pre(bank_addr, 0, 0, 9, 0);
+    // act(bank_addr, row_addr, 0, 9, 0);
+    // int cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
     // cmd_send(cmd, 9);
 
-    wr(write_buffer, bank_addr, col_addr, 9, 0);
+    // // Receive data
+    // int n_words = 16;
+    // uint32_t read_buffer[n_words];
+    // dma_recv(dma0_vptr, udmabuf_phys_addr, n_words * sizeof(uint32_t)); // 512 bits
+    // // Copy data to buffer
+    // memcpy(read_buffer, (uint32_t *)udmabuf_vptr, n_words * sizeof(uint32_t)); // 512 bits, 64 bytes
+    // for (int i = 0; i < n_words; i++) {
+    //     printf("%08x ", read_buffer[i]);
+    // }
+    // printf("\n");
+    // printf("\n");
 
-    // Read col = 0
-    pre(bank_addr, 0, 0, 9, 0);
-    act(bank_addr, row_addr, 0, 9, 0);
-    cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
-    cmd_send(cmd, 9);
+    // uint32_t cmd = 0;
 
-    // Receive data
-    int n_words = 16;
-    uint32_t read_buffer[n_words];
-    dma_recv(dma0_vptr, udmabuf_phys_addr, n_words * sizeof(uint32_t)); // 512 bits
-    // Copy data to buffer
-    memcpy(read_buffer, (uint32_t *)udmabuf_vptr, n_words * sizeof(uint32_t)); // 512 bits, 64 bytes
-    for (int i = 0; i < n_words; i++) {
-        printf("%08x ", read_buffer[i]);
-    }
-    printf("\n");
-    printf("\n");
+    // // Write col = 0
 
-    debug_gpio();
-    cleanup_hardware();
-    return 0;
+    // uint32_t write_buffer[16] = {0x12};
 
-    // Receive data and print
-    // Set data1
-    uint32_t write_buffer1[16] = {1, 3};
-    for (int i = 0; i < 16; i++) {
-        ptr[i] = write_buffer1[i];
-    }
-    dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+    // uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+    // for (int i = 0; i < 16; i++) {
+    //     ptr[i] = write_buffer[i];
+    // }
+    // // // Send wdata
+    // // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
 
-    debug_gpio();
+    // // // Send WR command
+    // // cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
+    // // cmd_send(cmd, 9);
 
-    // Set data2
-    uint32_t write_buffer2[16] = {3, 4};
-    for (int i = 0; i < 16; i++) {
-        ptr[i] = write_buffer2[i];
-    }
-    dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+    // wr(write_buffer, bank_addr, col_addr, 9, 0);
 
-    debug_gpio();
+    // debug_gpio();
+    // cleanup_hardware();
+    // return 0;
 
-    pre(bank_addr, 0, 0, 9, 0);
-    act(bank_addr, row_addr, 0, 9, 0);
+    // // Receive data and print
+    // // Set data1
+    // uint32_t write_buffer1[16] = {1, 3};
+    // for (int i = 0; i < 16; i++) {
+    //     ptr[i] = write_buffer1[i];
+    // }
+    // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+
+    // debug_gpio();
+
+    // // Set data2
+    // uint32_t write_buffer2[16] = {3, 4};
+    // for (int i = 0; i < 16; i++) {
+    //     ptr[i] = write_buffer2[i];
+    // }
+    // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+
+    // debug_gpio();
+
+    // pre(bank_addr, 0, 0, 9, 0);
+    // act(bank_addr, row_addr, 0, 9, 0);
  
-    // Read col = 0
-    bank_addr = 0;
-    col_addr = 0;
-    bank_addr &= 0xF; // 4 bits
-    col_addr &= 0x3FF; // 10 bits
-    cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
-    cmd_send(cmd, 9);
+    // // Read col = 0
+    // bank_addr = 0;
+    // col_addr = 0;
+    // bank_addr &= 0xF; // 4 bits
+    // col_addr &= 0x3FF; // 10 bits
+    // cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
+    // cmd_send(cmd, 9);
 
-    debug_gpio();
+    // debug_gpio();
 
-    debug_gpio();
+    // debug_gpio();
 
-    cleanup_hardware();
-    return 0;
+    // cleanup_hardware();
+    // return 0;
 }

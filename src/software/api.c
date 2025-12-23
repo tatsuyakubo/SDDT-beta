@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <time.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -182,34 +183,96 @@ void cleanup_hardware() {
     cleanup_mem_mappings();
 }
 
-// DMA Transfer (MM2S: Memory to Stream / Send)
-void dma_send(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
+// DMA Transfer Start (MM2S: Memory to Stream / Send)
+void dma_send_start(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
     volatile uint8_t *base = (volatile uint8_t *)dma_base;
-    // Run/Stop bit = 1
+    // Ensure Run/Stop bit is 1
     uint32_t cr = REG_READ(base + MM2S_DMACR);
-    REG_WRITE(base + MM2S_DMACR, cr | 1);
+    if (!(cr & 1)) {
+        REG_WRITE(base + MM2S_DMACR, cr | 1);
+    }
     // Set source address
     REG_WRITE(base + MM2S_SA, phys_addr);
     REG_WRITE(base + MM2S_SA_MSB, 0); // 32bit addressing
     // Set length (starts transfer)
     REG_WRITE(base + MM2S_LENGTH, length_bytes);
-    // Wait for idle (bit 1)
-    while (!(REG_READ(base + MM2S_DMASR) & 0x02));
 }
 
-// DMA Transfer (S2MM: Stream to Memory / Receive)
-void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
+// DMA Transfer Wait (MM2S: Memory to Stream / Send)
+void dma_send_wait(void *dma_base) {
     volatile uint8_t *base = (volatile uint8_t *)dma_base;
-    // Run/Stop bit = 1
+    uint32_t timeout = 10000000;
+    while (!(REG_READ(base + MM2S_DMASR) & 0x02) && --timeout);
+    if (timeout == 0) {
+        uint32_t final_status = REG_READ(base + MM2S_DMASR);
+        uint32_t final_cr = REG_READ(base + MM2S_DMACR);
+        printf("\nDMA S2MM Timed out!\n");
+        printf("Final DMACR: 0x%08X\n", final_cr);
+        printf("Final DMASR: 0x%08X\n", final_status);
+        printf("  Halted (bit 0): %d\n", (final_status >> 0) & 1);
+        printf("  Idle (bit 1): %d\n", (final_status >> 1) & 1);
+        printf("  SG_Incld (bit 2): %d\n", (final_status >> 2) & 1);
+        printf("  DMA Internal Error (bit 3): %d\n", (final_status >> 3) & 1);
+        printf("  DMA Slave Error (bit 4): %d\n", (final_status >> 4) & 1);
+        printf("  DMA Decode Error (bit 5): %d\n", (final_status >> 5) & 1);
+        printf("  IOC_Irq (bit 12): %d\n", (final_status >> 12) & 1);
+        printf("  Dly_Irq (bit 13): %d\n", (final_status >> 13) & 1);
+        printf("  Err_Irq (bit 14): %d\n", (final_status >> 14) & 1);
+        fprintf(stderr, "DMA S2MM Timed out! Status: 0x%08X\n", final_status);
+        exit(1);
+    }
+}
+
+// DMA Transfer (MM2S: Memory to Stream / Send)
+void dma_send(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
+    dma_send_start(dma_base, phys_addr, length_bytes);
+    dma_send_wait(dma_base);
+}
+
+// DMA Transfer Start (S2MM: Stream to Memory / Receive)
+void dma_recv_start(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
+    volatile uint8_t *base = (volatile uint8_t *)dma_base;
+    // Ensure Run/Stop bit is 1
     uint32_t cr = REG_READ(base + S2MM_DMACR);
-    REG_WRITE(base + S2MM_DMACR, cr | 1);
+    if (!(cr & 1)) {
+        REG_WRITE(base + S2MM_DMACR, cr | 1);
+    }
     // Set destination address
     REG_WRITE(base + S2MM_DA, phys_addr);
     REG_WRITE(base + S2MM_DA_MSB, 0); // 32bit addressing
     // Set length (starts transfer)
     REG_WRITE(base + S2MM_LENGTH, length_bytes);
-    // Wait for idle (bit 1)
-    while (!(REG_READ(base + S2MM_DMASR) & 0x02));
+}
+
+// DMA Transfer Wait (S2MM: Stream to Memory / Receive)
+void dma_recv_wait(void *dma_base) {
+    volatile uint8_t *base = (volatile uint8_t *)dma_base;
+    uint32_t timeout = 10000000;
+    while (!(REG_READ(base + S2MM_DMASR) & 0x02) && --timeout);
+    if (timeout == 0) {
+        uint32_t final_status = REG_READ(base + S2MM_DMASR);
+        uint32_t final_cr = REG_READ(base + S2MM_DMACR);
+        printf("\nDMA S2MM Timed out!\n");
+        printf("Final DMACR: 0x%08X\n", final_cr);
+        printf("Final DMASR: 0x%08X\n", final_status);
+        printf("  Halted (bit 0): %d\n", (final_status >> 0) & 1);
+        printf("  Idle (bit 1): %d\n", (final_status >> 1) & 1);
+        printf("  SG_Incld (bit 2): %d\n", (final_status >> 2) & 1);
+        printf("  DMA Internal Error (bit 3): %d\n", (final_status >> 3) & 1);
+        printf("  DMA Slave Error (bit 4): %d\n", (final_status >> 4) & 1);
+        printf("  DMA Decode Error (bit 5): %d\n", (final_status >> 5) & 1);
+        printf("  IOC_Irq (bit 12): %d\n", (final_status >> 12) & 1);
+        printf("  Dly_Irq (bit 13): %d\n", (final_status >> 13) & 1);
+        printf("  Err_Irq (bit 14): %d\n", (final_status >> 14) & 1);
+        fprintf(stderr, "DMA S2MM Timed out! Status: 0x%08X\n", final_status);
+        exit(1);
+    }
+}
+
+// DMA Transfer (S2MM: Stream to Memory / Receive)
+void dma_recv(void *dma_base, unsigned long phys_addr, uint32_t length_bytes) {
+    dma_recv_start(dma_base, phys_addr, length_bytes);
+    dma_recv_wait(dma_base);
 }
 
 // GPIO Read
@@ -381,6 +444,33 @@ uint32_t write_row(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uin
     return nck;
 }
 
+// Write Row
+uint32_t write_row_batch(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr) {
+    uint32_t nck = 0;
+    nck += pre(bank_addr, rank_addr, false, nRP, false);
+    nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
+    // Batched data transfer start
+    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+    for (int i = 0; i < 128; i++) {
+        for (int j = 0; j < 16; j++) {
+            ptr[i*16+j] = data_buf[i*16+j];
+        }
+    }
+    dma_send_start(dma0_vptr, udmabuf_phys_addr, 16 * 128 * sizeof(uint32_t)); // Batch transfer
+    // Issue WR commands
+    bank_addr &= 0xF; // 4 bits
+    for (int i = 0; i < 128; i++) {
+        int col_addr = i*8 & 0x3FF;
+        uint32_t cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
+        // Send command
+        cmd_send(cmd, nCCD_L);
+        nck += 1 + nCCD_L;
+    }
+    // Wait for DMA transfer completion
+    dma_send_wait(dma0_vptr);
+    return nck;
+}
+
 // Read Row
 uint32_t read_row(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr) {
     uint32_t nck = 0;
@@ -397,16 +487,20 @@ uint32_t read_row(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint
 //     uint32_t nck = 0;
 //     nck += pre(bank_addr, rank_addr, false, nRP, false);
 //     nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
-//     for (int i = 0; i < 128; i++) {
-//         uint32_t col_addr = i*8 & 0x3FF;
-//         uint32_t rd_cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
-//         cmd_send(rd_cmd, nCCD_L);
-//         nck += 1 + nCCD_L;
+//     int n_batches = 16; // the max value of n_batches is equal to the RDATA FIFO depth.
+//     for (int i = 0; i < 128/n_batches; i++) {
+//         // Issue RD commands
+//         for (int j = 0; j < n_batches; j++) {
+//             uint32_t col_addr = (i*n_batches+j)*8 & 0x3FF;
+//             uint32_t rd_cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
+//             cmd_send(rd_cmd, nCCD_L);
+//             nck += 1 + nCCD_L;
+//         }
+//         // Batched DMA transfer start
+//         dma_recv(dma0_vptr, udmabuf_phys_addr, n_batches * 16 * sizeof(uint32_t)); // 512 bits * n_batches
+//         // Copy data to buffer
+//         memcpy(data_buf+i*n_batches*16, (uint32_t *)udmabuf_vptr, n_batches * 16 * sizeof(uint32_t)); // 512 bits * n_batches, 64 bytes * n_batches
 //     }
-//     // Receive data
-//     dma_recv(dma0_vptr, udmabuf_phys_addr, 128 * 16 * sizeof(uint32_t)); // 512 bits * 128
-//     // Copy data to buffer
-//     memcpy(data_buf, (uint32_t *)udmabuf_vptr, 128 * 16 * sizeof(uint32_t)); // 512 bits * 128, 64 bytes * 128
 //     return nck;
 // }
 
@@ -416,4 +510,13 @@ uint32_t all_bank_refresh(uint8_t rank_addr) {
     nck += pre(0, rank_addr, true, nRP, false); // precharge all banks
     nck += rf(nRFC, false); // refresh
     return nck;
+}
+
+// Debug GPIO
+void debug_gpio() {
+    uint32_t gpio_data = gpio_read(1, false);
+    uint8_t cmd_fifo_count   = (gpio_data >> 16) & 0xFF;
+    uint8_t wdata_fifo_count = (gpio_data >> 8)  & 0xFF;
+    uint8_t rdata_fifo_count =  gpio_data        & 0xFF;
+    printf("CMD FIFO Count: %u, WDATA FIFO Count: %u, RDATA FIFO Count: %u\n", cmd_fifo_count, wdata_fifo_count, rdata_fifo_count);
 }

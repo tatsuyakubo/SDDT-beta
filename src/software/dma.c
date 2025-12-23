@@ -296,9 +296,6 @@ void dma_s2mm_wait(void *dma_base) {
         printf("  Err_Irq (bit 14): %d\n", (final_status >> 14) & 1);
         
         fprintf(stderr, "DMA S2MM Timed out! Status: 0x%08X\n", final_status);
-    } else {
-        printf("DMA S2MM completed successfully.\n");
-        printf("Final DMACR: 0x%08X, DMASR: 0x%08X\n", final_cr, final_status);
     }
 }
 
