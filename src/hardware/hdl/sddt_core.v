@@ -349,6 +349,25 @@ module sddt_core #(
   localparam RDATA_FIFO_WIDTH = 512;
   localparam RDATA_FIFO_COUNT_WIDTH = $clog2(RDATA_FIFO_DEPTH)+1;
   wire [RDATA_FIFO_COUNT_WIDTH-1:0] rdata_fifo_wr_data_count;
+
+  // // -------------------------------------------------------------------------
+  // // TLAST Batching Logic
+  // // -------------------------------------------------------------------------
+  // reg [15:0] outstanding_reads;
+  // // Because there is a possibility that 4 read commands are issued in one cycle, we sum them up.
+  // wire [2:0] current_reads = ddr_read[0] + ddr_read[1] + ddr_read[2] + ddr_read[3];
+  // always @(posedge c0_ddr4_clk) begin
+  //   if (c0_ddr4_rst || ~c0_init_calib_complete) begin
+  //     outstanding_reads <= 16'd0;
+  //   end else begin
+  //     // Add the issued read count and subtract the returned data count.
+  //     outstanding_reads <= outstanding_reads + current_reads - rdDataEn[0];
+  //   end
+  // end
+  // // Set TLAST when the returned data is the last data in all the issued reads.
+  // wire rdata_s_axis_tlast = rdDataEn[0] && (outstanding_reads + current_reads == 16'd1);
+  // // -------------------------------------------------------------------------
+
   xpm_fifo_axis #(
     .CLOCKING_MODE("independent_clock"),
     .FIFO_DEPTH(RDATA_FIFO_DEPTH),
