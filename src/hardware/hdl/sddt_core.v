@@ -107,13 +107,40 @@ module sddt_core #(
       state <= _state_sync2;
     end
   end
+  // DDR4 Interface Wires
+  wire [3:0]              ddr_write;
+  wire [3:0]              ddr_read;
+  wire [3:0]              ddr_pre;
+  wire [3:0]              ddr_act;
+  wire [3:0]              ddr_ref;
+  wire [3:0]              ddr_zq;
+  wire [3:0]              ddr_nop;
+  wire [3:0]              ddr_ap;
+  wire [3:0]              ddr_half_bl;
+  wire [3:0]              ddr_pall;
+  wire [4*BG_WIDTH-1:0]   ddr_bg;
+  wire [4*BANK_WIDTH-1:0] ddr_bank;
+  wire [4*COL_WIDTH-1:0]  ddr_col;
+  wire [4*ROW_WIDTH-1:0]  ddr_row;
+  wire [511:0]            ddr_wdata;
+  wire [511:0]            rdData;
+  wire [0:0]              rdDataEn;
 
   // =========================================================================
-  // Internal Wires
+  // Internal AXI Stream Wires
   // =========================================================================
-  wire         axis_cmd2instr_tready;
-  wire [127:0] axis_cmd2instr_tdata;
-  wire         axis_cmd2instr_tvalid;
+  // Command FIFO Wires <-> Timing Scheduler
+  wire         axis_cmd2timing_tready;
+  wire [127:0] axis_cmd2timing_tdata;
+  wire         axis_cmd2timing_tvalid;
+  // Write Data FIFO Wires <-> Timing Scheduler
+  wire         axis_wdata2timing_tready;
+  wire [511:0] axis_wdata2timing_tdata;
+  wire         axis_wdata2timing_tvalid;
+  // Timing Scheduler Wires <-> Refresh Scheduler
+  wire         axis_timing2refresh_tready;
+  wire [639:0] axis_timing2refresh_tdata;
+  wire         axis_timing2refresh_tvalid;
 
   // =========================================================================
   // Command FIFO (Async)
@@ -132,9 +159,9 @@ module sddt_core #(
   cmd_fifo (
     // Master interface
     .m_aclk(c0_ddr4_clk),
-    .m_axis_tready(axis_cmd2instr_tready),
-    .m_axis_tdata(axis_cmd2instr_tdata),
-    .m_axis_tvalid(axis_cmd2instr_tvalid),
+    .m_axis_tready(axis_cmd2timing_tready),
+    .m_axis_tdata(axis_cmd2timing_tdata),
+    .m_axis_tvalid(axis_cmd2timing_tvalid),
     // Slave interface
     .s_aclk(axi_aclk),
     .s_aresetn(axi_aresetn),
@@ -162,9 +189,9 @@ module sddt_core #(
   wdata_fifo (
     // Master interface
     .m_aclk(c0_ddr4_clk),
-    .m_axis_tready(1'b0),
-    .m_axis_tdata(),
-    .m_axis_tvalid(),
+    .m_axis_tready(axis_wdata2timing_tready),
+    .m_axis_tdata(axis_wdata2timing_tdata),
+    .m_axis_tvalid(axis_wdata2timing_tvalid),
     // Slave interface
     .s_aclk(axi_aclk),
     .s_aresetn(axi_aresetn),
@@ -176,36 +203,50 @@ module sddt_core #(
   );
 
   // =========================================================================
-  // AXI4 Instr
+  // Timing Scheduler
   // =========================================================================
-  wire [3:0]                ddr_write;
-  wire [3:0]                ddr_read;
-  wire [3:0]                ddr_pre;
-  wire [3:0]                ddr_act;
-  wire [3:0]                ddr_ref;
-  wire [3:0]                ddr_zq;
-  wire [3:0]                ddr_nop;
-  wire [3:0]                ddr_ap;
-  wire [3:0]                ddr_half_bl;
-  wire [3:0]                ddr_pall;
-  wire [4*BG_WIDTH-1:0]     ddr_bg;
-  wire [4*BANK_WIDTH-1:0]   ddr_bank;
-  wire [4*COL_WIDTH-1:0]    ddr_col;
-  wire [4*ROW_WIDTH-1:0]    ddr_row;
-  axi4_instr #(
+  timing_scheduler #(
+    .INSTR_WIDTH(CMD_FIFO_WIDTH), // 128
+    .WDATA_WIDTH(WDATA_FIFO_WIDTH), // 512
+    .MERGED_WIDTH(CMD_FIFO_WIDTH + WDATA_FIFO_WIDTH) // 640
+  )
+  timing_scheduler_i (
+    .clk(c0_ddr4_clk),
+    .rst(c0_ddr4_rst || ~c0_init_calib_complete),
+    // Command
+    .S_AXIS_INSTR_TDATA(axis_cmd2timing_tdata),
+    .S_AXIS_INSTR_TVALID(axis_cmd2timing_tvalid),
+    .S_AXIS_INSTR_TREADY(axis_cmd2timing_tready),
+    // Write data
+    .S_AXIS_WDATA_TDATA(axis_wdata2timing_tdata),
+    .S_AXIS_WDATA_TVALID(axis_wdata2timing_tvalid),
+    .S_AXIS_WDATA_TREADY(axis_wdata2timing_tready),
+    // Timing -> DDR4 Interface
+    .M_AXIS_TDATA(axis_timing2refresh_tdata),
+    .M_AXIS_TVALID(axis_timing2refresh_tvalid),
+    .M_AXIS_TREADY(axis_timing2refresh_tready)
+  );
+
+  // =========================================================================
+  // Refresh Scheduler
+  // =========================================================================
+  refresh_scheduler #(
     .BG_WIDTH(BG_WIDTH),
     .BANK_WIDTH(BANK_WIDTH),
     .COL_WIDTH(COL_WIDTH),
-    .ROW_WIDTH(ROW_WIDTH)
+    .ROW_WIDTH(ROW_WIDTH),
+    .INSTR_WIDTH(CMD_FIFO_WIDTH), // 128
+    .WDATA_WIDTH(WDATA_FIFO_WIDTH), // 512
+    .MERGED_WIDTH(CMD_FIFO_WIDTH + WDATA_FIFO_WIDTH) // 640
   )
-  axi4_instr_i (
+  refresh_scheduler_i (
     .clk(c0_ddr4_clk),
     .rst(c0_ddr4_rst || ~c0_init_calib_complete),
-    // AXI -> Instr
-    .S_AXIS_TDATA(axis_cmd2instr_tdata),
-    .S_AXIS_TVALID(axis_cmd2instr_tvalid),
-    .S_AXIS_TREADY(axis_cmd2instr_tready),
-    // Instr -> DDR4 Interface
+    // Timing -> Refresh
+    .S_AXIS_TDATA(axis_timing2refresh_tdata),
+    .S_AXIS_TVALID(axis_timing2refresh_tvalid),
+    .S_AXIS_TREADY(axis_timing2refresh_tready),
+    // Refresh -> DDR4
     .ddr_write(ddr_write),
     .ddr_read(ddr_read),
     .ddr_pre(ddr_pre),
@@ -220,8 +261,7 @@ module sddt_core #(
     .ddr_bank(ddr_bank),
     .ddr_col(ddr_col),
     .ddr_row(ddr_row),
-    // Debug
-    .latest_instr_id()
+    .ddr_wdata(ddr_wdata)
   );
 
   // =========================================================================
@@ -229,8 +269,6 @@ module sddt_core #(
   // =========================================================================
   wire         dbg_clk;
   wire [511:0] dbg_bus;
-  wire [511:0] rdData;
-  wire [0:0]   rdDataEn;
   `ifdef ENABLE_DLL_TOGGLER
   wire         ddr4_ui_clk;
   wire         c0_ddr4_dll_off_clk;
@@ -290,7 +328,7 @@ module sddt_core #(
     .ddr_bank               (ddr_bank),
     .ddr_col                (ddr_col),
     .ddr_row                (ddr_row),
-    .ddr_wdata              ({{(512-32){1'b0}}, control_r}),
+    .ddr_wdata              (ddr_wdata),
     // Read data interface (to cmd_scheduler)
     .rdData                 (rdData),
     .rdDataEn               (rdDataEn),
@@ -338,7 +376,12 @@ module sddt_core #(
     .wr_data_count_axis(rdata_fifo_wr_data_count)
   );
 
-  // Combine command and read data FIFO write data counts
-  assign state_i = {{(16-WDATA_FIFO_COUNT_WIDTH){1'b0}}, wdata_fifo_wr_data_count, {(16-RDATA_FIFO_COUNT_WIDTH){1'b0}}, rdata_fifo_wr_data_count};
+  // State output
+  assign state_i = {
+    8'b0,
+    { {(8-CMD_FIFO_COUNT_WIDTH){1'b0}}, cmd_fifo_wr_data_count },
+    { {(8-WDATA_FIFO_COUNT_WIDTH){1'b0}}, wdata_fifo_wr_data_count },
+    { {(8-RDATA_FIFO_COUNT_WIDTH){1'b0}}, rdata_fifo_wr_data_count }
+  };
 
 endmodule

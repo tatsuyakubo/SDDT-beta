@@ -52,10 +52,7 @@ module refresh_scheduler #(
     output reg  [4*ROW_WIDTH-1:0]   ddr_row,
     
     // DDR4 Write data output
-    output reg  [511:0]             ddr_wdata,
-    
-    // Debug
-    output wire [2:0]               latest_instr_id
+    output reg  [511:0]             ddr_wdata
 );
 
     //=========================================================================
@@ -81,9 +78,6 @@ module refresh_scheduler #(
     
     // Always ready to receive
     assign S_AXIS_TREADY = 1'b1;
-    
-    // Debug output
-    assign latest_instr_id = instr_data[2:0];
     
     //=========================================================================
     // Decode logic

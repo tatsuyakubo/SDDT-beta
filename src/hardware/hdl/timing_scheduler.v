@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 //=============================================================================
-// timing_scheduler (High Performance Version)
+// timing_scheduler
 // 
 // Independently accepts instruction and write data streams for maximum
 // throughput. Both streams are always ready to receive new data.
