@@ -350,19 +350,12 @@ uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
     bank_addr &= 0xF; // 4 bits
     col_addr &= 0x3FF; // 10 bits
     uint32_t cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
-
     // Set data
-
-    // // Original
-    // uint32_t *ptr = (uint32_t *)udmabuf_vptr;
-    // for (int i = 0; i < 16; i++) {
-    //     ptr[i] = buffer[i];
-    // }
-    // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
-
-    // GPIO
-    gpio_write(2, buffer[0], false);
-
+    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+    for (int i = 0; i < 16; i++) {
+        ptr[i] = buffer[i];
+    }
+    dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
     // Send command
     cmd_send(cmd, interval);
     uint32_t nck = 1 + interval;

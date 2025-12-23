@@ -350,19 +350,12 @@ uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
     bank_addr &= 0xF; // 4 bits
     col_addr &= 0x3FF; // 10 bits
     uint32_t cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
-
     // Set data
-
-    // // Original
-    // uint32_t *ptr = (uint32_t *)udmabuf_vptr;
-    // for (int i = 0; i < 16; i++) {
-    //     ptr[i] = buffer[i];
-    // }
-    // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
-
-    // GPIO
-    gpio_write(2, buffer[0], false);
-
+    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+    for (int i = 0; i < 16; i++) {
+        ptr[i] = buffer[i];
+    }
+    dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
     // Send command
     cmd_send(cmd, interval);
     uint32_t nck = 1 + interval;
@@ -379,7 +372,10 @@ uint32_t rf(uint32_t interval, bool strict) {
 
 void debug_gpio() {
     uint32_t gpio_data = gpio_read(1, false);
-    printf("gpio 1 data: %d\n", gpio_data);
+    uint8_t cmd_fifo_count   = (gpio_data >> 16) & 0xFF;
+    uint8_t wdata_fifo_count = (gpio_data >> 8)  & 0xFF;
+    uint8_t rdata_fifo_count =  gpio_data        & 0xFF;
+    printf("CMD FIFO Count: %u, WDATA FIFO Count: %u, RDATA FIFO Count: %u\n", cmd_fifo_count, wdata_fifo_count, rdata_fifo_count);
 }
 
 int main(int argc, char *argv[]) {
@@ -391,15 +387,23 @@ int main(int argc, char *argv[]) {
     int col_addr = 0;
     uint32_t cmd = 0;
 
-    // gpio_write(2, 0x12345678, false);
-
     // Write col = 0
     pre(bank_addr, 0, 0, 9, 0);
     act(bank_addr, row_addr, 0, 9, 0);
 
+    uint32_t write_buffer[16] = {0x12};
+
+    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
+    for (int i = 0; i < 16; i++) {
+        ptr[i] = write_buffer[i];
+    }
+    // // Send wdata
+    // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+
+    // // Send WR command
     // cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
     // cmd_send(cmd, 9);
-    uint32_t write_buffer[16] = {0x12345878};
+
     wr(write_buffer, bank_addr, col_addr, 9, 0);
 
     // Read col = 0
@@ -421,18 +425,18 @@ int main(int argc, char *argv[]) {
     printf("\n");
 
     debug_gpio();
-
     cleanup_hardware();
     return 0;
 
     // Receive data and print
     // Set data1
     uint32_t write_buffer1[16] = {1, 3};
-    uint32_t *ptr = (uint32_t *)udmabuf_vptr;
     for (int i = 0; i < 16; i++) {
         ptr[i] = write_buffer1[i];
     }
     dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+
+    debug_gpio();
 
     // Set data2
     uint32_t write_buffer2[16] = {3, 4};
