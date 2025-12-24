@@ -209,25 +209,25 @@ module sddt_core #(
   // Scheduler
   // =========================================================================
   scheduler #(
-    .INSTR_WIDTH(CMD_FIFO_WIDTH), // 128
+    .CMD_WIDTH(CMD_FIFO_WIDTH), // 128
     .WDATA_WIDTH(WDATA_FIFO_WIDTH), // 512
-    .MERGED_WIDTH(CMD_FIFO_WIDTH + WDATA_FIFO_WIDTH) // 640
+    .OUTPUT_WIDTH(CMD_FIFO_WIDTH + WDATA_FIFO_WIDTH) // 640
   )
   scheduler_i (
     .clk(c0_ddr4_clk),
     .rst(c0_ddr4_rst || ~c0_init_calib_complete),
     // Command
-    .S_AXIS_INSTR_TDATA(axis_cmd2scheduler_tdata),
-    .S_AXIS_INSTR_TVALID(axis_cmd2scheduler_tvalid),
-    .S_AXIS_INSTR_TREADY(axis_cmd2scheduler_tready),
-    .S_AXIS_INSTR_TLAST(axis_cmd2scheduler_tlast),
+    .S_AXIS_CMD_TDATA(axis_cmd2scheduler_tdata),
+    .S_AXIS_CMD_TVALID(axis_cmd2scheduler_tvalid),
+    .S_AXIS_CMD_TREADY(axis_cmd2scheduler_tready),
+    .S_AXIS_CMD_TLAST(axis_cmd2scheduler_tlast),
     // Write data
     .S_AXIS_WDATA_TDATA(axis_wdata2scheduler_tdata),
     .S_AXIS_WDATA_TVALID(axis_wdata2scheduler_tvalid),
     .S_AXIS_WDATA_TREADY(axis_wdata2scheduler_tready),
     // Timing -> DDR4 Interface
-    .merged_output_data(scheduler2decoder_data),
-    .merged_output_valid(scheduler2decoder_valid)
+    .output_data(scheduler2decoder_data),
+    .output_valid(scheduler2decoder_valid)
   );
 
   // =========================================================================
@@ -238,9 +238,9 @@ module sddt_core #(
     .BANK_WIDTH(BANK_WIDTH),
     .COL_WIDTH(COL_WIDTH),
     .ROW_WIDTH(ROW_WIDTH),
-    .INSTR_WIDTH(CMD_FIFO_WIDTH), // 128
+    .CMD_WIDTH(CMD_FIFO_WIDTH), // 128
     .WDATA_WIDTH(WDATA_FIFO_WIDTH), // 512
-    .MERGED_WIDTH(CMD_FIFO_WIDTH + WDATA_FIFO_WIDTH) // 640
+    .INPUT_WIDTH(CMD_FIFO_WIDTH + WDATA_FIFO_WIDTH) // 640
   )
   decoder_i (
     .clk(c0_ddr4_clk),

@@ -3,14 +3,14 @@
 //=============================================================================
 // Decoder
 // 
-// Receives 640-bit merged data from timing_scheduler and decodes it into
+// Receives 640-bit data from scheduler and decodes it into
 // DDR4 commands and write data.
 //
 // Input format (640-bit):
-//   [127:0]   - Instruction data (4 x 32-bit commands)
+//   [127:0]   - DDR4 command data (4 x 32-bit commands)
 //   [639:128] - Write data (512-bit)
 //
-// Instruction format (each 32-bit slot):
+// DDR4 command format (each 32-bit slot):
 //   [2:0]   - Command type (0=NOP, 1=PRE, 2=ACT, 3=RD, 4=WR, 5=REF)
 //   [4:3]   - Bank address
 //   [6:5]   - Bank group
@@ -23,15 +23,15 @@ module decoder #(
     parameter BANK_WIDTH = 2,
     parameter COL_WIDTH  = 10,
     parameter ROW_WIDTH  = 17,
-    parameter INSTR_WIDTH = 128,
+    parameter CMD_WIDTH = 128,
     parameter WDATA_WIDTH = 512,
-    parameter MERGED_WIDTH = INSTR_WIDTH + WDATA_WIDTH  // 640
+    parameter INPUT_WIDTH = CMD_WIDTH + WDATA_WIDTH  // 640
 )(
     input  wire                     clk,
     input  wire                     rst,
     
-    // AXI Stream Slave - Merged input (from timing_scheduler)
-    input  wire [MERGED_WIDTH-1:0]  input_data,
+    // AXI Stream Slave - Input (from scheduler)
+    input  wire [INPUT_WIDTH-1:0]   input_data,
     input  wire                     input_valid,
     
     // DDR4 Command outputs
@@ -68,15 +68,15 @@ module decoder #(
     //=========================================================================
     // Internal signals
     //=========================================================================
-    wire [INSTR_WIDTH-1:0] instr_data;
+    wire [CMD_WIDTH-1:0] cmd_data;
     wire [WDATA_WIDTH-1:0] write_data;
     
-    // Extract instruction and write data from merged input
-    assign instr_data = input_data[INSTR_WIDTH-1:0];
-    assign write_data = input_data[MERGED_WIDTH-1:INSTR_WIDTH];
+    // Extract DDR4 command and write data from input
+    assign cmd_data = input_data[CMD_WIDTH-1:0];
+    assign write_data = input_data[INPUT_WIDTH-1:CMD_WIDTH];
     
     //=========================================================================
-    // Decode logic
+    // Decode DDR4 command and write data
     //=========================================================================
     integer i;
     
@@ -118,17 +118,17 @@ module decoder #(
                 // Capture write data
                 ddr_wdata <= write_data;
                 
-                // Decode each of the 4 instruction slots
+                // Decode each of the 4 DDR4 command slots
                 for (i = 0; i < 4; i = i + 1) begin
                     // Extract address fields
-                    ddr_bank[i*BANK_WIDTH +: BANK_WIDTH] <= instr_data[i*32+3 +: BANK_WIDTH];
-                    ddr_bg[i*BG_WIDTH +: BG_WIDTH]       <= instr_data[i*32+3+BANK_WIDTH +: BG_WIDTH];
-                    ddr_row[i*ROW_WIDTH +: ROW_WIDTH]    <= instr_data[i*32+3+BANK_WIDTH+BG_WIDTH +: ROW_WIDTH];
-                    ddr_col[i*COL_WIDTH +: COL_WIDTH]    <= instr_data[i*32+3+BANK_WIDTH+BG_WIDTH +: COL_WIDTH];
-                    ddr_pall[i]                          <= instr_data[i*32+3+BANK_WIDTH+BG_WIDTH];
+                    ddr_bank[i*BANK_WIDTH +: BANK_WIDTH] <= cmd_data[i*32+3 +: BANK_WIDTH];
+                    ddr_bg[i*BG_WIDTH +: BG_WIDTH]       <= cmd_data[i*32+3+BANK_WIDTH +: BG_WIDTH];
+                    ddr_row[i*ROW_WIDTH +: ROW_WIDTH]    <= cmd_data[i*32+3+BANK_WIDTH+BG_WIDTH +: ROW_WIDTH];
+                    ddr_col[i*COL_WIDTH +: COL_WIDTH]    <= cmd_data[i*32+3+BANK_WIDTH+BG_WIDTH +: COL_WIDTH];
+                    ddr_pall[i]                          <= cmd_data[i*32+3+BANK_WIDTH+BG_WIDTH];
                     
                     // Decode command type
-                    case (instr_data[i*32 +: 3])
+                    case (cmd_data[i*32 +: 3])
                         CMD_NOP: ddr_nop[i]   <= 1'b1;
                         CMD_PRE: ddr_pre[i]   <= 1'b1;
                         CMD_ACT: ddr_act[i]   <= 1'b1;
