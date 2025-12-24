@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 //=============================================================================
-// instr_decoder
+// Decoder
 // 
 // Receives 640-bit merged data from timing_scheduler and decodes it into
 // DDR4 commands and write data.
@@ -18,7 +18,7 @@
 //   [7]     - PALL (precharge all) flag
 //=============================================================================
 
-module refresh_scheduler #(
+module decoder #(
     parameter BG_WIDTH   = 2,
     parameter BANK_WIDTH = 2,
     parameter COL_WIDTH  = 10,

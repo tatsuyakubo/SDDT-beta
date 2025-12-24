@@ -24,7 +24,7 @@
 //   [639:128] - Write data (zero if no WR command)
 //=============================================================================
 
-module timing_scheduler #(
+module scheduler #(
     parameter INSTR_WIDTH = 128,
     parameter WDATA_WIDTH = 512,
     parameter MERGED_WIDTH = INSTR_WIDTH + WDATA_WIDTH  // 640
@@ -36,6 +36,7 @@ module timing_scheduler #(
     input  wire [INSTR_WIDTH-1:0]   S_AXIS_INSTR_TDATA,
     input  wire                     S_AXIS_INSTR_TVALID,
     output wire                     S_AXIS_INSTR_TREADY,
+    input  wire                     S_AXIS_INSTR_TLAST,
     
     // AXI Stream Slave - Write data input (from host)
     input  wire [WDATA_WIDTH-1:0]   S_AXIS_WDATA_TDATA,

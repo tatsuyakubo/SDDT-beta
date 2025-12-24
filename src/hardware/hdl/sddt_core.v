@@ -72,7 +72,7 @@ module sddt_core #(
 );
 
   // =========================================================================
-  // Internal Signals
+  // Clock and Reset Signals
   // =========================================================================
   wire         c0_ddr4_clk;
   wire         c0_ddr4_rst;
@@ -107,7 +107,23 @@ module sddt_core #(
       state <= _state_sync2;
     end
   end
-  // DDR4 Interface Wires
+
+  // =========================================================================
+  // Internal Wires
+  // =========================================================================
+  // Command FIFO <-> Scheduler
+  wire         axis_cmd2scheduler_tready;
+  wire [127:0] axis_cmd2scheduler_tdata;
+  wire         axis_cmd2scheduler_tvalid;
+  wire         axis_cmd2scheduler_tlast;
+  // Write Data FIFO <-> Scheduler
+  wire         axis_wdata2scheduler_tready;
+  wire [511:0] axis_wdata2scheduler_tdata;
+  wire         axis_wdata2scheduler_tvalid;
+  // Scheduler <-> Decoder
+  wire [639:0] scheduler2decoder_data;
+  wire         scheduler2decoder_valid;
+  // Decoder <-> DDR4 Interface
   wire [3:0]              ddr_write;
   wire [3:0]              ddr_read;
   wire [3:0]              ddr_pre;
@@ -127,21 +143,6 @@ module sddt_core #(
   wire [0:0]              rdDataEn;
 
   // =========================================================================
-  // Internal AXI Stream Wires
-  // =========================================================================
-  // Command FIFO Wires <-> Timing Scheduler
-  wire         axis_cmd2timing_tready;
-  wire [127:0] axis_cmd2timing_tdata;
-  wire         axis_cmd2timing_tvalid;
-  // Write Data FIFO Wires <-> Timing Scheduler
-  wire         axis_wdata2timing_tready;
-  wire [511:0] axis_wdata2timing_tdata;
-  wire         axis_wdata2timing_tvalid;
-  // Timing Scheduler Wires <-> Refresh Scheduler
-  wire [639:0] timing2refresh_data;
-  wire         timing2refresh_valid;
-
-  // =========================================================================
   // Command FIFO (Async)
   // =========================================================================
   localparam CMD_FIFO_DEPTH = 16;
@@ -151,6 +152,7 @@ module sddt_core #(
   xpm_fifo_axis #(
     .CLOCKING_MODE("independent_clock"),
     .FIFO_DEPTH(CMD_FIFO_DEPTH),
+    .PACKET_FIFO("true"),
     .TDATA_WIDTH(CMD_FIFO_WIDTH),
     .USE_ADV_FEATURES("1004"), // Valid and enable wr_data_count
     .WR_DATA_COUNT_WIDTH(CMD_FIFO_COUNT_WIDTH)
@@ -158,15 +160,17 @@ module sddt_core #(
   cmd_fifo (
     // Master interface
     .m_aclk(c0_ddr4_clk),
-    .m_axis_tready(axis_cmd2timing_tready),
-    .m_axis_tdata(axis_cmd2timing_tdata),
-    .m_axis_tvalid(axis_cmd2timing_tvalid),
+    .m_axis_tready(axis_cmd2scheduler_tready),
+    .m_axis_tdata(axis_cmd2scheduler_tdata),
+    .m_axis_tvalid(axis_cmd2scheduler_tvalid),
+    .m_axis_tlast(axis_cmd2scheduler_tlast),
     // Slave interface
     .s_aclk(axi_aclk),
     .s_aresetn(axi_aresetn),
     .s_axis_tready(S_AXIS_CMD_tready),
     .s_axis_tdata(S_AXIS_CMD_tdata),
     .s_axis_tvalid(S_AXIS_CMD_tvalid),
+    .s_axis_tlast(~S_AXIS_CMD_tdata[127]),
     // Status signals
     .wr_data_count_axis(cmd_fifo_wr_data_count)
   );
@@ -188,9 +192,9 @@ module sddt_core #(
   wdata_fifo (
     // Master interface
     .m_aclk(c0_ddr4_clk),
-    .m_axis_tready(axis_wdata2timing_tready),
-    .m_axis_tdata(axis_wdata2timing_tdata),
-    .m_axis_tvalid(axis_wdata2timing_tvalid),
+    .m_axis_tready(axis_wdata2scheduler_tready),
+    .m_axis_tdata(axis_wdata2scheduler_tdata),
+    .m_axis_tvalid(axis_wdata2scheduler_tvalid),
     // Slave interface
     .s_aclk(axi_aclk),
     .s_aresetn(axi_aresetn),
@@ -202,33 +206,34 @@ module sddt_core #(
   );
 
   // =========================================================================
-  // Timing Scheduler
+  // Scheduler
   // =========================================================================
-  timing_scheduler #(
+  scheduler #(
     .INSTR_WIDTH(CMD_FIFO_WIDTH), // 128
     .WDATA_WIDTH(WDATA_FIFO_WIDTH), // 512
     .MERGED_WIDTH(CMD_FIFO_WIDTH + WDATA_FIFO_WIDTH) // 640
   )
-  timing_scheduler_i (
+  scheduler_i (
     .clk(c0_ddr4_clk),
     .rst(c0_ddr4_rst || ~c0_init_calib_complete),
     // Command
-    .S_AXIS_INSTR_TDATA(axis_cmd2timing_tdata),
-    .S_AXIS_INSTR_TVALID(axis_cmd2timing_tvalid),
-    .S_AXIS_INSTR_TREADY(axis_cmd2timing_tready),
+    .S_AXIS_INSTR_TDATA(axis_cmd2scheduler_tdata),
+    .S_AXIS_INSTR_TVALID(axis_cmd2scheduler_tvalid),
+    .S_AXIS_INSTR_TREADY(axis_cmd2scheduler_tready),
+    .S_AXIS_INSTR_TLAST(axis_cmd2scheduler_tlast),
     // Write data
-    .S_AXIS_WDATA_TDATA(axis_wdata2timing_tdata),
-    .S_AXIS_WDATA_TVALID(axis_wdata2timing_tvalid),
-    .S_AXIS_WDATA_TREADY(axis_wdata2timing_tready),
+    .S_AXIS_WDATA_TDATA(axis_wdata2scheduler_tdata),
+    .S_AXIS_WDATA_TVALID(axis_wdata2scheduler_tvalid),
+    .S_AXIS_WDATA_TREADY(axis_wdata2scheduler_tready),
     // Timing -> DDR4 Interface
-    .merged_output_data(timing2refresh_data),
-    .merged_output_valid(timing2refresh_valid)
+    .merged_output_data(scheduler2decoder_data),
+    .merged_output_valid(scheduler2decoder_valid)
   );
 
   // =========================================================================
-  // Refresh Scheduler
+  // Decoder
   // =========================================================================
-  refresh_scheduler #(
+  decoder #(
     .BG_WIDTH(BG_WIDTH),
     .BANK_WIDTH(BANK_WIDTH),
     .COL_WIDTH(COL_WIDTH),
@@ -237,13 +242,13 @@ module sddt_core #(
     .WDATA_WIDTH(WDATA_FIFO_WIDTH), // 512
     .MERGED_WIDTH(CMD_FIFO_WIDTH + WDATA_FIFO_WIDTH) // 640
   )
-  refresh_scheduler_i (
+  decoder_i (
     .clk(c0_ddr4_clk),
     .rst(c0_ddr4_rst || ~c0_init_calib_complete),
-    // Timing -> Refresh
-    .input_data(timing2refresh_data),
-    .input_valid(timing2refresh_valid),
-    // Refresh -> DDR4
+    // Scheduler -> Decoder
+    .input_data(scheduler2decoder_data),
+    .input_valid(scheduler2decoder_valid),
+    // Decoder -> DDR4
     .ddr_write(ddr_write),
     .ddr_read(ddr_read),
     .ddr_pre(ddr_pre),
