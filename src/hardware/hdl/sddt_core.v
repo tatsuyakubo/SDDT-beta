@@ -138,9 +138,8 @@ module sddt_core #(
   wire [511:0] axis_wdata2timing_tdata;
   wire         axis_wdata2timing_tvalid;
   // Timing Scheduler Wires <-> Refresh Scheduler
-  wire         axis_timing2refresh_tready;
-  wire [639:0] axis_timing2refresh_tdata;
-  wire         axis_timing2refresh_tvalid;
+  wire [639:0] timing2refresh_data;
+  wire         timing2refresh_valid;
 
   // =========================================================================
   // Command FIFO (Async)
@@ -222,9 +221,8 @@ module sddt_core #(
     .S_AXIS_WDATA_TVALID(axis_wdata2timing_tvalid),
     .S_AXIS_WDATA_TREADY(axis_wdata2timing_tready),
     // Timing -> DDR4 Interface
-    .M_AXIS_TDATA(axis_timing2refresh_tdata),
-    .M_AXIS_TVALID(axis_timing2refresh_tvalid),
-    .M_AXIS_TREADY(axis_timing2refresh_tready)
+    .merged_output_data(timing2refresh_data),
+    .merged_output_valid(timing2refresh_valid)
   );
 
   // =========================================================================
@@ -243,9 +241,8 @@ module sddt_core #(
     .clk(c0_ddr4_clk),
     .rst(c0_ddr4_rst || ~c0_init_calib_complete),
     // Timing -> Refresh
-    .S_AXIS_TDATA(axis_timing2refresh_tdata),
-    .S_AXIS_TVALID(axis_timing2refresh_tvalid),
-    .S_AXIS_TREADY(axis_timing2refresh_tready),
+    .input_data(timing2refresh_data),
+    .input_valid(timing2refresh_valid),
     // Refresh -> DDR4
     .ddr_write(ddr_write),
     .ddr_read(ddr_read),

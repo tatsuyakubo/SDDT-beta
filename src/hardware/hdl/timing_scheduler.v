@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 //=============================================================================
-// timing_scheduler
+// Scheduler
 // 
 // Independently accepts instruction and write data streams for maximum
 // throughput. Both streams are always ready to receive new data.
@@ -42,10 +42,9 @@ module timing_scheduler #(
     input  wire                     S_AXIS_WDATA_TVALID,
     output wire                     S_AXIS_WDATA_TREADY,
     
-    // AXI Stream Master - Merged output (to decoder)
-    output wire [MERGED_WIDTH-1:0]  M_AXIS_TDATA,
-    output wire                     M_AXIS_TVALID,
-    input  wire                     M_AXIS_TREADY
+    // Merged output without backpressure (to decoder)
+    output wire [MERGED_WIDTH-1:0]  merged_output_data,
+    output wire                     merged_output_valid
 );
 
     //=========================================================================
@@ -73,18 +72,15 @@ module timing_scheduler #(
     //=========================================================================
     // Output control logic
     //=========================================================================
-    wire output_ready;
-    wire output_handshake;
     wire wdata_consumed;
     
-    // Output is ready when:
+    // Output is valid when:
     // - Instruction is valid AND
     // - Either no WR command (don't need wdata) OR wdata is available
-    assign output_ready = instr_valid_reg && (!has_wr_cmd || wdata_valid_reg);
-    assign output_handshake = M_AXIS_TVALID && M_AXIS_TREADY;
+    assign merged_output_valid = instr_valid_reg && (!has_wr_cmd || wdata_valid_reg);
     
     // wdata is consumed when output handshake occurs AND instruction has WR command
-    assign wdata_consumed = output_handshake && has_wr_cmd;
+    assign wdata_consumed = merged_output_valid && has_wr_cmd;
     
     //=========================================================================
     // Ready signals - Independent acceptance
@@ -92,8 +88,8 @@ module timing_scheduler #(
     
     // Accept new instruction when:
     // - No instruction stored, OR
-    // - Output handshake is occurring (current instruction being sent out)
-    assign S_AXIS_INSTR_TREADY = !instr_valid_reg || output_handshake;
+    // - Output occurs in this cycle (current instruction being sent out)
+    assign S_AXIS_INSTR_TREADY = !instr_valid_reg || merged_output_valid;
     
     // Accept new wdata when:
     // - No wdata stored, OR
@@ -103,11 +99,9 @@ module timing_scheduler #(
     //=========================================================================
     // Output signals
     //=========================================================================
-    assign M_AXIS_TVALID = output_ready;
-    
     // Merge instruction and write data
     // If no WR command, write data portion is zero
-    assign M_AXIS_TDATA = {(has_wr_cmd ? wdata_reg : {WDATA_WIDTH{1'b0}}), instr_reg};
+    assign merged_output_data = {(has_wr_cmd ? wdata_reg : {WDATA_WIDTH{1'b0}}), instr_reg};
     
     //=========================================================================
     // Register capture logic
@@ -127,7 +121,7 @@ module timing_scheduler #(
                 // Capture new instruction
                 instr_reg <= S_AXIS_INSTR_TDATA;
                 instr_valid_reg <= 1'b1;
-            end else if (output_handshake) begin
+            end else if (merged_output_valid) begin
                 // Instruction sent out, clear valid
                 instr_valid_reg <= 1'b0;
             end
@@ -168,9 +162,9 @@ module timing_scheduler #(
                 instr_count <= instr_count + 1;
             if (S_AXIS_WDATA_TVALID && S_AXIS_WDATA_TREADY)
                 wdata_count <= wdata_count + 1;
-            if (output_handshake)
+            if (merged_output_valid)
                 output_count <= output_count + 1;
-            if (output_handshake && has_wr_cmd)
+            if (merged_output_valid && has_wr_cmd)
                 wr_cmd_count <= wr_cmd_count + 1;
             if (instr_valid_reg && has_wr_cmd && !wdata_valid_reg)
                 wait_cycles <= wait_cycles + 1;

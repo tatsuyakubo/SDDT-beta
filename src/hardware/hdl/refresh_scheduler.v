@@ -31,9 +31,8 @@ module refresh_scheduler #(
     input  wire                     rst,
     
     // AXI Stream Slave - Merged input (from timing_scheduler)
-    input  wire [MERGED_WIDTH-1:0]  S_AXIS_TDATA,
-    input  wire                     S_AXIS_TVALID,
-    output wire                     S_AXIS_TREADY,
+    input  wire [MERGED_WIDTH-1:0]  input_data,
+    input  wire                     input_valid,
     
     // DDR4 Command outputs
     output reg  [3:0]               ddr_write,
@@ -73,11 +72,8 @@ module refresh_scheduler #(
     wire [WDATA_WIDTH-1:0] write_data;
     
     // Extract instruction and write data from merged input
-    assign instr_data = S_AXIS_TDATA[INSTR_WIDTH-1:0];
-    assign write_data = S_AXIS_TDATA[MERGED_WIDTH-1:INSTR_WIDTH];
-    
-    // Always ready to receive
-    assign S_AXIS_TREADY = 1'b1;
+    assign instr_data = input_data[INSTR_WIDTH-1:0];
+    assign write_data = input_data[MERGED_WIDTH-1:INSTR_WIDTH];
     
     //=========================================================================
     // Decode logic
@@ -118,7 +114,7 @@ module refresh_scheduler #(
             ddr_col     <= {(4*COL_WIDTH){1'b0}};
             ddr_row     <= {(4*ROW_WIDTH){1'b0}};
             
-            if (S_AXIS_TVALID) begin
+            if (input_valid) begin
                 // Capture write data
                 ddr_wdata <= write_data;
                 
