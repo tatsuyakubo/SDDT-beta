@@ -33,7 +33,7 @@ int main(int argc, char *argv[]) {
     clock_gettime(CLOCK_MONOTONIC, &start);
 
     uint32_t nck = 0;
-    nck += write_row_batch(write_data_buf, bank_addr, row_addr, rank_addr);
+    nck += write_row(write_data_buf, bank_addr, row_addr, rank_addr);
     nck += all_bank_refresh(rank_addr);
     nck += read_row(read_data_buf, bank_addr, row_addr, rank_addr);
     nck += all_bank_refresh(rank_addr);
@@ -66,6 +66,9 @@ int main(int argc, char *argv[]) {
         }
     }
     printf("Data verification done.\n");
+    printf("\n");
+
+    debug_gpio();
 
     // Cleanup
     cleanup_hardware();

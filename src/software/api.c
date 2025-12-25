@@ -343,7 +343,10 @@ void cmd_send_64bit(uint32_t data, uint32_t interval) {
 }
 
 // Command Send (32-bit)
-void cmd_send_32bit(uint32_t cmd, uint32_t interval) {
+void cmd_send_32bit(uint32_t cmd, uint32_t interval, bool strict) {
+    if (strict) {
+        cmd |= 1 << 31;
+    }
     uint32_t packet_len_bytes = 4*(1 + interval);
     if (packet_len_bytes > AXI_BRIDGE_SIZE) {
         fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
@@ -361,7 +364,8 @@ void cmd_send_32bit(uint32_t cmd, uint32_t interval) {
     // Interval (NOP)
     // Loop unrolling and NEON can be used for further speedup
     for (int i = 1; i < interval+1; i++) {
-        bridge_base[bridge_32bit_index] = 0;
+        uint32_t nop_cmd = strict ? (0b111 | (1 << 31)) : 0b111;
+        bridge_base[bridge_32bit_index] = nop_cmd;
         bridge_32bit_index++;
         if (bridge_32bit_index >= max_index) {
             bridge_32bit_index = 0;
@@ -370,16 +374,16 @@ void cmd_send_32bit(uint32_t cmd, uint32_t interval) {
 }
 
 // Command Send
-void cmd_send(uint32_t cmd, uint32_t interval) {
+void cmd_send(uint32_t cmd, uint32_t interval, bool strict) {
     // cmd_send_64bit(cmd, interval);
-    cmd_send_32bit(cmd, interval);
+    cmd_send_32bit(cmd, interval, strict);
 }
 
 // Precharge Command
 uint32_t pre(uint8_t bank_addr, uint8_t rank_addr, bool bank_all, uint32_t interval, bool strict) {
     bank_addr &= 0xF; // 4 bits
     uint32_t cmd = 1 | (bank_addr << 3) | (bank_all << 7); // Precharge
-    cmd_send(cmd, interval);
+    cmd_send(cmd, interval, strict);
     uint32_t nck = 1 + interval;
     return nck;
 }
@@ -389,17 +393,17 @@ uint32_t act(uint8_t bank_addr, uint32_t row_addr, uint8_t rank_addr, uint32_t i
     bank_addr &= 0xF; // 4 bits
     row_addr &= 0x7FFF; // 17 bits
     uint32_t cmd = 2 | (bank_addr << 3) | (row_addr << 7); // Activate
-    cmd_send(cmd, interval);
+    cmd_send(cmd, interval, strict);
     uint32_t nck = 1 + interval;
     return nck;
 }
 
 // Read Command
-uint32_t rd(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t interval, bool strict) {
+uint32_t rd(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t interval) {
     bank_addr &= 0xF; // 4 bits
     col_addr &= 0x3FF; // 10 bits
     uint32_t cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
-    cmd_send(cmd, interval);
+    cmd_send(cmd, interval, false);
     // Receive data
     dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
     // Copy data to buffer
@@ -409,7 +413,7 @@ uint32_t rd(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
 }
 
 // Write Command
-uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t interval, bool strict) {
+uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t interval) {
     bank_addr &= 0xF; // 4 bits
     col_addr &= 0x3FF; // 10 bits
     uint32_t cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
@@ -420,15 +424,15 @@ uint32_t wr(uint32_t *buffer, uint8_t bank_addr, uint16_t col_addr, uint32_t int
     }
     dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
     // Send command
-    cmd_send(cmd, interval);
+    cmd_send(cmd, interval, false);
     uint32_t nck = 1 + interval;
     return nck;
 }
 
 // Refresh Command
-uint32_t rf(uint32_t interval, bool strict) {
+uint32_t rf(uint32_t interval) {
     uint32_t cmd = 5; // Refresh
-    cmd_send(cmd, interval);
+    cmd_send(cmd, interval, false);
     uint32_t nck = 1 + interval;
     return nck;
 }
@@ -439,7 +443,7 @@ uint32_t write_row(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uin
     nck += pre(bank_addr, rank_addr, false, nRP, false);
     nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
     for (int i = 0; i < 128; i++) {
-        nck += wr(data_buf+i*16, bank_addr, i*8, nCCD_L, false);
+        nck += wr(data_buf+i*16, bank_addr, i*8, nCCD_L);
     }
     return nck;
 }
@@ -463,7 +467,7 @@ uint32_t write_row_batch(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_add
         int col_addr = i*8 & 0x3FF;
         uint32_t cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
         // Send command
-        cmd_send(cmd, nCCD_L);
+        cmd_send(cmd, nCCD_L, false);
         nck += 1 + nCCD_L;
     }
     // Wait for DMA transfer completion
@@ -477,7 +481,7 @@ uint32_t read_row(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint
     nck += pre(bank_addr, rank_addr, false, nRP, false);
     nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
     for (int i = 0; i < 128; i++) {
-        nck += rd(data_buf+i*16, bank_addr, i*8, nCCD_L, false);
+        nck += rd(data_buf+i*16, bank_addr, i*8, nCCD_L);
     }
     return nck;
 }
@@ -508,7 +512,7 @@ uint32_t read_row(uint32_t *data_buf, uint8_t bank_addr, uint32_t row_addr, uint
 uint32_t all_bank_refresh(uint8_t rank_addr) {
     uint32_t nck = 0;
     nck += pre(0, rank_addr, true, nRP, false); // precharge all banks
-    nck += rf(nRFC, false); // refresh
+    nck += rf(nRFC); // refresh
     return nck;
 }
 
