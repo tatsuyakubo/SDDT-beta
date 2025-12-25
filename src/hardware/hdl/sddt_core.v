@@ -47,6 +47,7 @@ module sddt_core #(
   input  wire [127:0]              S_AXIS_CMD_tdata,
   input  wire                      S_AXIS_CMD_tvalid,
   output wire                      S_AXIS_CMD_tready,
+  input  wire                      S_AXIS_CMD_tlast,
   
   // =========================================================================
   // AXI Stream Write Data Interface
@@ -170,7 +171,7 @@ module sddt_core #(
     .s_axis_tready(S_AXIS_CMD_tready),
     .s_axis_tdata(S_AXIS_CMD_tdata),
     .s_axis_tvalid(S_AXIS_CMD_tvalid),
-    .s_axis_tlast(~S_AXIS_CMD_tdata[127]),
+    .s_axis_tlast(S_AXIS_CMD_tlast),
     // Status signals
     .wr_data_count_axis(cmd_fifo_wr_data_count)
   );

@@ -34,6 +34,7 @@ module top #(parameter tCK = 1500, SIM = "false")
   wire [127:0] axis_cmd_tdata;
   wire         axis_cmd_tready;
   wire         axis_cmd_tvalid;
+  wire         axis_cmd_tlast;
   wire [511:0] axis_wdata_tdata;
   wire         axis_wdata_tready;
   wire         axis_wdata_tvalid;
@@ -56,6 +57,7 @@ module top #(parameter tCK = 1500, SIM = "false")
     .M_AXIS_CMD_tdata(axis_cmd_tdata),
     .M_AXIS_CMD_tready(axis_cmd_tready),
     .M_AXIS_CMD_tvalid(axis_cmd_tvalid),
+    .M_AXIS_CMD_tlast(axis_cmd_tlast),
     // AXI Stream Write Data Interface
     .M_AXIS_WDATA_tdata(axis_wdata_tdata),
     .M_AXIS_WDATA_tready(axis_wdata_tready),
@@ -101,6 +103,7 @@ module top #(parameter tCK = 1500, SIM = "false")
     .S_AXIS_CMD_tdata(axis_cmd_tdata),
     .S_AXIS_CMD_tvalid(axis_cmd_tvalid),
     .S_AXIS_CMD_tready(axis_cmd_tready),
+    .S_AXIS_CMD_tlast(axis_cmd_tlast),
     // Write Data FIFO interface
     .S_AXIS_WDATA_tdata(axis_wdata_tdata),
     .S_AXIS_WDATA_tvalid(axis_wdata_tvalid),
