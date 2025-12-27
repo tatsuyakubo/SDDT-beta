@@ -125,12 +125,14 @@ module decoder #(
                     ddr_bg[i*BG_WIDTH +: BG_WIDTH]       <= cmd_data[i*32+3+BANK_WIDTH +: BG_WIDTH];
                     ddr_row[i*ROW_WIDTH +: ROW_WIDTH]    <= cmd_data[i*32+3+BANK_WIDTH+BG_WIDTH +: ROW_WIDTH];
                     ddr_col[i*COL_WIDTH +: COL_WIDTH]    <= cmd_data[i*32+3+BANK_WIDTH+BG_WIDTH +: COL_WIDTH];
-                    ddr_pall[i]                          <= cmd_data[i*32+3+BANK_WIDTH+BG_WIDTH];
                     
                     // Decode command type
                     case (cmd_data[i*32 +: 3])
                         CMD_NOP: ddr_nop[i]   <= 1'b1;
-                        CMD_PRE: ddr_pre[i]   <= 1'b1;
+                        CMD_PRE: begin
+                            ddr_pre[i]   <= 1'b1;
+                            ddr_pall[i]  <= cmd_data[i*32+3+BANK_WIDTH+BG_WIDTH];
+                        end
                         CMD_ACT: ddr_act[i]   <= 1'b1;
                         CMD_RD:  ddr_read[i]  <= 1'b1;
                         CMD_WR:  ddr_write[i] <= 1'b1;
