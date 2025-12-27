@@ -40,9 +40,10 @@
 
 // Timing Parameters
 // tCK = 1.5ns (666MHz)
-#define nRP    9 // tRP  = 14.16ns, nRP  = 14.16 / 1.5 = 9.44
-#define nRCD   9 // tRCD = 14.16ns, nRCD = 14.16 / 1.5 = 9.44
-#define nCCD_L 3 // tCCD_L = 6 * 0.833 = 5.0ns, nCCD_L = 5.0 / 1.5 = 3.33
+#define nRP    9  // tRP  = 14.16ns, nRP  = 14.16 / 1.5 = 9.44
+#define nRCD   9  // tRCD = 14.16ns, nRCD = 14.16 / 1.5 = 9.44
+#define nRAS   21 // tRAS = 32.00ns, nRAS = 32.00 / 1.5 = 21.33
+#define nCCD_L 3  // tCCD_L = 6 * 0.833 = 5.0ns, nCCD_L = 5.0 / 1.5 = 3.33
 // tREFI = 7.8us
 #define nRFC 233 // tRFC = 421 * 0.833 = 350.693ns, nRFC = 350.693 / 1.5 = 233.795
 
@@ -55,9 +56,9 @@ void *udmabuf_vptr;
 unsigned int udmabuf_size;
 unsigned long udmabuf_phys_addr;
 void *gpio_vptr;
-// Bridge index tracking (for circular buffer)
-static uint32_t bridge_32bit_index = 0;
-static uint32_t bridge_64bit_index = 0;
+// // Bridge index tracking (for circular buffer)
+// static uint32_t bridge_32bit_index = 0;
+// static uint32_t bridge_64bit_index = 0;
 
 // Cleanup Memory Mappings
 static void cleanup_mem_mappings(void) {
@@ -313,34 +314,34 @@ void gpio_write(int channel, uint32_t data, bool change_mode) {
     REG_WRITE((volatile uint8_t *)gpio_vptr + data_offset, data);
 }
 
-// Command Send (64-bit)
-void cmd_send_64bit(uint32_t data, uint32_t interval) {
-    // Pack data(32bit) + interval*NOP(32bit) into 64bit words (2x32bit per 64bit)
-    uint32_t num_64bit_words = (1 + interval + 1) / 2; // ceil((1+interval)/2)
-    uint32_t packet_len_bytes = 8*num_64bit_words;
-    if (packet_len_bytes > AXI_BRIDGE_SIZE) {
-        fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
-        exit(1);
-    }
-    volatile uint64_t *bridge_base = (volatile uint64_t *)bridge_vptr;
-    uint32_t max_index = AXI_BRIDGE_SIZE / 8; // Maximum index for 64-bit words
-    // Write data (Full interface) -> burst transfer!
-    // First 64bit: data(lower 32bit) + first NOP(upper 32bit)
-    bridge_base[bridge_64bit_index] = ((uint64_t)0 << 32) | data;
-    bridge_64bit_index++;
-    if (bridge_64bit_index >= max_index) {
-        bridge_64bit_index = 0;
-    }
-    // Remaining NOPs packed 2 per 64bit word (all NOPs are 0)
-    // Loop unrolling and NEON can be used for further speedup
-    for (int i = 1; i < num_64bit_words+1; i++) {
-        bridge_base[bridge_64bit_index] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
-        bridge_64bit_index++;
-        if (bridge_64bit_index >= max_index) {
-            bridge_64bit_index = 0;
-        }
-    }
-}
+// // Command Send (64-bit)
+// void cmd_send_64bit(uint32_t data, uint32_t interval) {
+//     // Pack data(32bit) + interval*NOP(32bit) into 64bit words (2x32bit per 64bit)
+//     uint32_t num_64bit_words = (1 + interval + 1) / 2; // ceil((1+interval)/2)
+//     uint32_t packet_len_bytes = 8*num_64bit_words;
+//     if (packet_len_bytes > AXI_BRIDGE_SIZE) {
+//         fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
+//         exit(1);
+//     }
+//     volatile uint64_t *bridge_base = (volatile uint64_t *)bridge_vptr;
+//     uint32_t max_index = AXI_BRIDGE_SIZE / 8; // Maximum index for 64-bit words
+//     // Write data (Full interface) -> burst transfer!
+//     // First 64bit: data(lower 32bit) + first NOP(upper 32bit)
+//     bridge_base[bridge_64bit_index] = ((uint64_t)0 << 32) | data;
+//     bridge_64bit_index++;
+//     if (bridge_64bit_index >= max_index) {
+//         bridge_64bit_index = 0;
+//     }
+//     // Remaining NOPs packed 2 per 64bit word (all NOPs are 0)
+//     // Loop unrolling and NEON can be used for further speedup
+//     for (int i = 1; i < num_64bit_words+1; i++) {
+//         bridge_base[bridge_64bit_index] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
+//         bridge_64bit_index++;
+//         if (bridge_64bit_index >= max_index) {
+//             bridge_64bit_index = 0;
+//         }
+//     }
+// }
 
 // Command Send (32-bit)
 void cmd_send_32bit(uint32_t cmd, uint32_t interval, bool strict) {
@@ -353,30 +354,45 @@ void cmd_send_32bit(uint32_t cmd, uint32_t interval, bool strict) {
         exit(1);
     }
     volatile uint32_t *bridge_base = (volatile uint32_t *)bridge_vptr;
-    uint32_t max_index = AXI_BRIDGE_SIZE / 4; // Maximum index for 32-bit words
-    // Write data (Full interface) -> burst transfer!
-    // Command
-    bridge_base[bridge_32bit_index] = cmd;
-    bridge_32bit_index++;
-    if (bridge_32bit_index >= max_index) {
-        bridge_32bit_index = 0;
+
+    bridge_base[0] = cmd;
+    for (int i = 0; i < interval; i++) {
+        bridge_base[0] = strict ? (0b111 | (1 << 31)) : 0b111;
     }
-    // Interval (NOP)
-    // Loop unrolling and NEON can be used for further speedup
-    for (int i = 1; i < interval+1; i++) {
-        uint32_t nop_cmd = strict ? (0b111 | (1 << 31)) : 0b111;
-        bridge_base[bridge_32bit_index] = nop_cmd;
-        bridge_32bit_index++;
-        if (bridge_32bit_index >= max_index) {
-            bridge_32bit_index = 0;
-        }
-    }
+
+    // // Index increment
+    // uint32_t max_index = AXI_BRIDGE_SIZE / 4; // Maximum index for 32-bit words
+    // // Write data (Full interface) -> burst transfer!
+    // // Command
+    // bridge_base[bridge_32bit_index] = cmd;
+    // bridge_32bit_index++;
+    // if (bridge_32bit_index >= max_index) {
+    //     bridge_32bit_index = 0;
+    // }
+    // // Interval (NOP)
+    // // Loop unrolling and NEON can be used for further speedup
+    // for (int i = 1; i < interval+1; i++) {
+    //     uint32_t nop_cmd = strict ? (0b111 | (1 << 31)) : 0b111;
+    //     bridge_base[bridge_32bit_index] = nop_cmd;
+    //     bridge_32bit_index++;
+    //     if (bridge_32bit_index >= max_index) {
+    //         bridge_32bit_index = 0;
+    //     }
+    // }
 }
 
 // Command Send
 void cmd_send(uint32_t cmd, uint32_t interval, bool strict) {
     // cmd_send_64bit(cmd, interval);
     cmd_send_32bit(cmd, interval, strict);
+}
+
+// NOP Command
+uint32_t nop(uint32_t interval, bool strict) {
+    uint32_t cmd = 0b111; // NOP
+    cmd_send(cmd, interval, strict);
+    uint32_t nck = 1 + interval;
+    return nck;
 }
 
 // Precharge Command

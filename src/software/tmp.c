@@ -40,9 +40,10 @@
 
 // Timing Parameters
 // tCK = 1.5ns (666MHz)
-#define nRP    9 // tRP  = 14.16ns, nRP  = 14.16 / 1.5 = 9.44
-#define nRCD   9 // tRCD = 14.16ns, nRCD = 14.16 / 1.5 = 9.44
-#define nCCD_L 3 // tCCD_L = 6 * 0.833 = 5.0ns, nCCD_L = 5.0 / 1.5 = 3.33
+#define nRP    9  // tRP  = 14.16ns, nRP  = 14.16 / 1.5 = 9.44
+#define nRCD   9  // tRCD = 14.16ns, nRCD = 14.16 / 1.5 = 9.44
+#define nRAS   21 // tRAS = 32.00ns, nRAS = 32.00 / 1.5 = 21.33
+#define nCCD_L 3  // tCCD_L = 6 * 0.833 = 5.0ns, nCCD_L = 5.0 / 1.5 = 3.33
 // tREFI = 7.8us
 #define nRFC 233 // tRFC = 421 * 0.833 = 350.693ns, nRFC = 350.693 / 1.5 = 233.795
 
@@ -55,9 +56,9 @@ void *udmabuf_vptr;
 unsigned int udmabuf_size;
 unsigned long udmabuf_phys_addr;
 void *gpio_vptr;
-// Bridge index tracking (for circular buffer)
-static uint32_t bridge_32bit_index = 0;
-static uint32_t bridge_64bit_index = 0;
+// // Bridge index tracking (for circular buffer)
+// static uint32_t bridge_32bit_index = 0;
+// static uint32_t bridge_64bit_index = 0;
 
 // Cleanup Memory Mappings
 static void cleanup_mem_mappings(void) {
@@ -313,34 +314,34 @@ void gpio_write(int channel, uint32_t data, bool change_mode) {
     REG_WRITE((volatile uint8_t *)gpio_vptr + data_offset, data);
 }
 
-// Command Send (64-bit)
-void cmd_send_64bit(uint32_t data, uint32_t interval) {
-    // Pack data(32bit) + interval*NOP(32bit) into 64bit words (2x32bit per 64bit)
-    uint32_t num_64bit_words = (1 + interval + 1) / 2; // ceil((1+interval)/2)
-    uint32_t packet_len_bytes = 8*num_64bit_words;
-    if (packet_len_bytes > AXI_BRIDGE_SIZE) {
-        fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
-        exit(1);
-    }
-    volatile uint64_t *bridge_base = (volatile uint64_t *)bridge_vptr;
-    uint32_t max_index = AXI_BRIDGE_SIZE / 8; // Maximum index for 64-bit words
-    // Write data (Full interface) -> burst transfer!
-    // First 64bit: data(lower 32bit) + first NOP(upper 32bit)
-    bridge_base[bridge_64bit_index] = ((uint64_t)0 << 32) | data;
-    bridge_64bit_index++;
-    if (bridge_64bit_index >= max_index) {
-        bridge_64bit_index = 0;
-    }
-    // Remaining NOPs packed 2 per 64bit word (all NOPs are 0)
-    // Loop unrolling and NEON can be used for further speedup
-    for (int i = 1; i < num_64bit_words+1; i++) {
-        bridge_base[bridge_64bit_index] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
-        bridge_64bit_index++;
-        if (bridge_64bit_index >= max_index) {
-            bridge_64bit_index = 0;
-        }
-    }
-}
+// // Command Send (64-bit)
+// void cmd_send_64bit(uint32_t data, uint32_t interval) {
+//     // Pack data(32bit) + interval*NOP(32bit) into 64bit words (2x32bit per 64bit)
+//     uint32_t num_64bit_words = (1 + interval + 1) / 2; // ceil((1+interval)/2)
+//     uint32_t packet_len_bytes = 8*num_64bit_words;
+//     if (packet_len_bytes > AXI_BRIDGE_SIZE) {
+//         fprintf(stderr, "Packet length is too long: %d bytes\n", packet_len_bytes);
+//         exit(1);
+//     }
+//     volatile uint64_t *bridge_base = (volatile uint64_t *)bridge_vptr;
+//     uint32_t max_index = AXI_BRIDGE_SIZE / 8; // Maximum index for 64-bit words
+//     // Write data (Full interface) -> burst transfer!
+//     // First 64bit: data(lower 32bit) + first NOP(upper 32bit)
+//     bridge_base[bridge_64bit_index] = ((uint64_t)0 << 32) | data;
+//     bridge_64bit_index++;
+//     if (bridge_64bit_index >= max_index) {
+//         bridge_64bit_index = 0;
+//     }
+//     // Remaining NOPs packed 2 per 64bit word (all NOPs are 0)
+//     // Loop unrolling and NEON can be used for further speedup
+//     for (int i = 1; i < num_64bit_words+1; i++) {
+//         bridge_base[bridge_64bit_index] = 0; // Two NOPs packed: 0(lower 32bit) + 0(upper 32bit)
+//         bridge_64bit_index++;
+//         if (bridge_64bit_index >= max_index) {
+//             bridge_64bit_index = 0;
+//         }
+//     }
+// }
 
 // Command Send (32-bit)
 void cmd_send_32bit(uint32_t cmd, uint32_t interval, bool strict) {
@@ -384,6 +385,14 @@ void cmd_send_32bit(uint32_t cmd, uint32_t interval, bool strict) {
 void cmd_send(uint32_t cmd, uint32_t interval, bool strict) {
     // cmd_send_64bit(cmd, interval);
     cmd_send_32bit(cmd, interval, strict);
+}
+
+// NOP Command
+uint32_t nop(uint32_t interval, bool strict) {
+    uint32_t cmd = 0b111; // NOP
+    cmd_send(cmd, interval, strict);
+    uint32_t nck = 1 + interval;
+    return nck;
 }
 
 // Precharge Command
@@ -523,8 +532,33 @@ uint32_t all_bank_refresh(uint8_t rank_addr) {
     return nck;
 }
 
+// Helper function to print 8-bit value in binary
+static void print_cmd(uint32_t value) {
+    for (int i = 31; i >= 0; i--) {
+        putchar((value >> i) & 1 ? '1' : '0');
+    }
+}
+
 // Debug GPIO
 void debug_gpio() {
+    // gpio_write(2, (1<<31 | 0), false);
+    // uint32_t gpio_data = gpio_read(1, false);
+    // print_cmd(gpio_data);
+    // printf(", ");
+    // gpio_write(2, (1<<31 | 1), false);
+    // gpio_data = gpio_read(1, false);
+    // print_cmd(gpio_data);
+    // printf(", ");
+    // gpio_write(2, (1<<31 | 2), false);
+    // gpio_data = gpio_read(1, false);
+    // print_cmd(gpio_data);
+    // printf(", ");
+    // gpio_write(2, (1<<31 | 3), false);
+    // gpio_data = gpio_read(1, false);
+    // print_cmd(gpio_data);
+    // printf("\n");
+
+    gpio_write(2, 0, false);
     uint32_t gpio_data = gpio_read(1, false);
     uint8_t cmd_fifo_count   = (gpio_data >> 16) & 0xFF;
     uint8_t wdata_fifo_count = (gpio_data >> 8)  & 0xFF;
@@ -536,60 +570,143 @@ int main(int argc, char *argv[]) {
     if (setup_hardware() != 0) return -1;
     printf("Hardware mapped successfully.\n\n");
 
+    // // =============================================================================
+    // int n_rows = 1;
+    // int rank_addr = 0;
+    // int bank_addr = 0;
+
+    // nop(0, false);
+    // // SiMRA
+    // pre(bank_addr, rank_addr, false, nRP, false);
+    // act(bank_addr, 0, rank_addr, 1, true);
+    // pre(bank_addr, rank_addr, false, 0, true);
+    // act(bank_addr, 3, rank_addr, 0, false);
+
+    // debug_gpio();
+    // cleanup_hardware();
+    // return 0;
+
+    // =============================================================================
     int n_rows = 1;
     int rank_addr = 0;
     int bank_addr = 0;
-    // int row_addr = 0;
-    // int col_addr = 0;
-    // uint32_t nck = 0;
-    // nck += pre(bank_addr, rank_addr, false, nRP, false);
-    // nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
 
-    // uint32_t buffer[16];
-    // rd(buffer, bank_addr, col_addr, nCCD_L);
+    uint32_t row0_wdata[16] = {0x00000000};
+    uint32_t row0_rdata[16] = {};
+    uint32_t row1_wdata[16] = {0x11111111};
+    uint32_t row1_rdata[16] = {};
+    uint32_t row2_wdata[16] = {0x22222222};
+    uint32_t row2_rdata[16] = {};
+    uint32_t row3_wdata[16] = {0x33333333};
+    uint32_t row3_rdata[16] = {};
+    uint32_t row4_wdata[16] = {0x44444444};
+    uint32_t row4_rdata[16] = {};
 
-    // uint32_t cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
-    // cmd_send(cmd, nCCD_L, false);
-    // // Receive data
-    // dma_recv(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits
-    // // Copy data to buffer
-    // memcpy(buffer, (uint32_t *)udmabuf_vptr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
+    // All Bank Refresh
+    pre(0, rank_addr, true, nRP, false);
+    all_bank_refresh(rank_addr);
 
-    // for (int i = 0; i < 16; i++) {
-    //     printf("%08x ", buffer[i]);
-    // }
-    // printf("\n");
-    // printf("\n");
+    // Write Row 0
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 0, rank_addr, nRCD, false);
+    wr(row0_wdata, bank_addr, 0, nCCD_L);
+    // Write Row 1
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 1, rank_addr, nRCD, false);
+    wr(row1_wdata, bank_addr, 0, nCCD_L);
+    // Write Row 2
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 2, rank_addr, nRCD, false);
+    wr(row2_wdata, bank_addr, 0, nCCD_L);
+    // Write Row 3
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 3, rank_addr, nRCD, false);
+    wr(row3_wdata, bank_addr, 0, nCCD_L);
+    // Write Row 4
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 4, rank_addr, nRCD, false);
+    wr(row4_wdata, bank_addr, 0, nCCD_L);
 
-    uint32_t write_buffer[128*16];
-    for (int i = 0; i < 128*16; i++) {
-        write_buffer[i] = i;
-    }
-    uint32_t read_buffer[128*16];
-    for (int i = 0; i < 128*16; i++) {
-        read_buffer[i] = 0;
-    }
-
-    uint32_t row_addr = 0;
-    uint32_t nck = 0;
-    nck += pre(bank_addr, rank_addr, false, nRP, false);
-    nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
-    uint32_t n_cols = 2;
-    for (int i = 0; i < n_cols; i++) {
-        nck += wr(write_buffer+i*16, bank_addr, i*8, nCCD_L);
-    }
-    nck += pre(bank_addr, rank_addr, false, nRP, false);
-    nck += act(bank_addr, row_addr, rank_addr, nRCD, false);
-    for (int i = 0; i < n_cols; i++) {
-        nck += rd(read_buffer+i*16, bank_addr, i*8, nCCD_L);
-    }
-    for (int i = 0; i < n_cols; i++) {
-        for (int j = 0; j < 16; j++) {
-            printf("%08x ", read_buffer[i*16+j]);
-        }
-        printf("\n");
-    }
+    // Read Row 1
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 1, rank_addr, nRCD, false);
+    rd(row1_rdata, bank_addr, 0, nCCD_L);
+    // Read Row 2
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 2, rank_addr, nRCD, false);
+    rd(row2_rdata, bank_addr, 0, nCCD_L);
+    // Read Row 3
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 3, rank_addr, nRCD, false);
+    rd(row3_rdata, bank_addr, 0, nCCD_L);
+    // Read Row 4
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 4, rank_addr, nRCD, false);
+    rd(row4_rdata, bank_addr, 0, nCCD_L);
+    // Print read data
+    printf("Row 0 RData: %08x, %08x\n", row0_rdata[0], row0_rdata[1]);
+    printf("Row 1 RData: %08x, %08x\n", row1_rdata[0], row1_rdata[1]);
+    printf("Row 2 RData: %08x, %08x\n", row2_rdata[0], row2_rdata[1]);
+    printf("Row 3 RData: %08x, %08x\n", row3_rdata[0], row3_rdata[1]);
+    printf("Row 4 RData: %08x, %08x\n", row4_rdata[0], row4_rdata[1]);
     printf("\n");
+
+    int addr_1 = 0;
+    int addr_2 = 3;
+
+    // // RowCopy
+    // pre(bank_addr, rank_addr, false, nRP, false);
+    // act(bank_addr, addr_1, rank_addr, nRAS, false);
+    // pre(bank_addr, rank_addr, false, 4, true);
+    // act(bank_addr, addr_2, rank_addr, nRCD, false);
+
+    // SiMRA
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, addr_1, rank_addr, 1, true);
+    pre(bank_addr, rank_addr, false, 0, true);
+    act(bank_addr, addr_2, rank_addr, 0, false);
+
+    // Read Row 0
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 0, rank_addr, nRCD, false);
+    rd(row0_rdata, bank_addr, 0, nCCD_L);
+    // Read Row 1
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 1, rank_addr, nRCD, false);
+    rd(row1_rdata, bank_addr, 0, nCCD_L);
+    // Read Row 2
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 2, rank_addr, nRCD, false);
+    rd(row2_rdata, bank_addr, 0, nCCD_L);
+    // Read Row 3
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 3, rank_addr, nRCD, false);
+    rd(row3_rdata, bank_addr, 0, nCCD_L);
+    // Read Row 4
+    pre(bank_addr, rank_addr, false, nRP, false);
+    act(bank_addr, 4, rank_addr, nRCD, false);
+    rd(row4_rdata, bank_addr, 0, nCCD_L);
+    // Print read data
+    printf("Row 0 RData: %08x, %08x\n", row0_rdata[0], row0_rdata[1]);
+    printf("Row 1 RData: %08x, %08x\n", row1_rdata[0], row1_rdata[1]);
+    printf("Row 2 RData: %08x, %08x\n", row2_rdata[0], row2_rdata[1]);
+    printf("Row 3 RData: %08x, %08x\n", row3_rdata[0], row3_rdata[1]);
+    printf("Row 4 RData: %08x, %08x\n", row4_rdata[0], row4_rdata[1]);
+    printf("\n");
+
+    debug_gpio();
+    cleanup_hardware();
+    return 0;
+
+    // // =============================================================================
+    // uint32_t write_buffer[128*16];
+    // for (int i = 0; i < 128*16; i++) {
+    //     write_buffer[i] = i;
+    // }
+    // uint32_t read_buffer[128*16];
+    // for (int i = 0; i < 128*16; i++) {
+    //     read_buffer[i] = 0;
+    // }
 
     // /*** Start operations ***/
     // printf("Starting operations...\n");
@@ -626,13 +743,13 @@ int main(int argc, char *argv[]) {
     // printf("Overhead: %fx slower than ideal\n", latency_s / ideal_latency_s);
     // printf("\n");
 
-    // for (int i = 0; i < 128; i++) {
-    //     for (int j = 0; j < 16; j++) {
-    //         printf("%08x ", read_buffer[i*16+j]);
-    //     }
-    //     printf("\n");
-    // }
-    // printf("\n");
+    // // for (int i = 0; i < 128; i++) {
+    // //     for (int j = 0; j < 16; j++) {
+    // //         printf("%08x ", read_buffer[i*16+j]);
+    // //     }
+    // //     printf("\n");
+    // // }
+    // // printf("\n");
 
     // int row_addr = 0;
     // for (int i = 0; i < 128; i++) {
@@ -645,87 +762,7 @@ int main(int argc, char *argv[]) {
     // }
     // printf("Data verification done.\n");
 
-    debug_gpio();
-    cleanup_hardware();
-    return 0;
-
-    // // Read col = 0
-    // int row_addr = 0;
-    // int col_addr = 0;
-    // pre(bank_addr, 0, 0, 9, 0);
-    // act(bank_addr, row_addr, 0, 9, 0);
-    // int cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
-    // cmd_send(cmd, 9);
-
-    // // Receive data
-    // int n_words = 16;
-    // uint32_t read_buffer[n_words];
-    // dma_recv(dma0_vptr, udmabuf_phys_addr, n_words * sizeof(uint32_t)); // 512 bits
-    // // Copy data to buffer
-    // memcpy(read_buffer, (uint32_t *)udmabuf_vptr, n_words * sizeof(uint32_t)); // 512 bits, 64 bytes
-    // for (int i = 0; i < n_words; i++) {
-    //     printf("%08x ", read_buffer[i]);
-    // }
-    // printf("\n");
-    // printf("\n");
-
-    // uint32_t cmd = 0;
-
-    // // Write col = 0
-
-    // uint32_t write_buffer[16] = {0x12};
-
-    // uint32_t *ptr = (uint32_t *)udmabuf_vptr;
-    // for (int i = 0; i < 16; i++) {
-    //     ptr[i] = write_buffer[i];
-    // }
-    // // // Send wdata
-    // // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
-
-    // // // Send WR command
-    // // cmd = 4 | (bank_addr << 3) | (col_addr << 7); // Write
-    // // cmd_send(cmd, 9);
-
-    // wr(write_buffer, bank_addr, col_addr, 9, 0);
-
     // debug_gpio();
-    // cleanup_hardware();
-    // return 0;
-
-    // // Receive data and print
-    // // Set data1
-    // uint32_t write_buffer1[16] = {1, 3};
-    // for (int i = 0; i < 16; i++) {
-    //     ptr[i] = write_buffer1[i];
-    // }
-    // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
-
-    // debug_gpio();
-
-    // // Set data2
-    // uint32_t write_buffer2[16] = {3, 4};
-    // for (int i = 0; i < 16; i++) {
-    //     ptr[i] = write_buffer2[i];
-    // }
-    // dma_send(dma0_vptr, udmabuf_phys_addr, 16 * sizeof(uint32_t)); // 512 bits, 64 bytes
-
-    // debug_gpio();
-
-    // pre(bank_addr, 0, 0, 9, 0);
-    // act(bank_addr, row_addr, 0, 9, 0);
- 
-    // // Read col = 0
-    // bank_addr = 0;
-    // col_addr = 0;
-    // bank_addr &= 0xF; // 4 bits
-    // col_addr &= 0x3FF; // 10 bits
-    // cmd = 3 | (bank_addr << 3) | (col_addr << 7); // Read
-    // cmd_send(cmd, 9);
-
-    // debug_gpio();
-
-    // debug_gpio();
-
     // cleanup_hardware();
     // return 0;
 }

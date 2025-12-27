@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
             for (uint32_t row_addr = 0; row_addr < n_rows; row_addr++) {
                 gen_data_pattern(write_data_buf, bank_addr, row_addr, rank_addr, seed);
                 uint32_t nck = 0;
-                nck += write_row(write_data_buf, bank_addr, row_addr, rank_addr);
+                nck += write_row_batch(write_data_buf, bank_addr, row_addr, rank_addr);
                 nck += read_row(read_data_buf, bank_addr, row_addr, rank_addr);
                 // Verify data
                 for (int i = 0; i < 128; i++) {

@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
         for (uint8_t bank_addr = 0; bank_addr < n_banks; bank_addr++) {
             for (uint32_t row_addr = 0; row_addr < n_rows; row_addr++) {
                 gen_data_pattern(write_data_buf, bank_addr, row_addr, rank_addr, seed);
-                write_row(write_data_buf, bank_addr, row_addr, rank_addr);
+                write_row_batch(write_data_buf, bank_addr, row_addr, rank_addr);
                 all_bank_refresh(rank_addr);
             }
         }
