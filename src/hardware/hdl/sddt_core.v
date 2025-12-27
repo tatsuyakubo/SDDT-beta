@@ -142,6 +142,8 @@ module sddt_core #(
   wire [511:0]            ddr_wdata;
   wire [511:0]            rdData;
   wire [0:0]              rdDataEn;
+  // Debug
+  wire [31:0]  scheduler_debug_data;
 
   // =========================================================================
   // Command FIFO (Async)
@@ -228,7 +230,10 @@ module sddt_core #(
     .S_AXIS_WDATA_TREADY(axis_wdata2scheduler_tready),
     // Timing -> DDR4 Interface
     .output_data(scheduler2decoder_data),
-    .output_valid(scheduler2decoder_valid)
+    .output_valid(scheduler2decoder_valid),
+    // Debug
+    .debug_index(control_r[1:0]),
+    .debug_data(scheduler_debug_data)
   );
 
   // =========================================================================
@@ -399,7 +404,7 @@ module sddt_core #(
   );
 
   // State output
-  assign state_i = {
+  assign state_i = control_r[31] ? scheduler_debug_data : {
     8'b0,
     { {(8-CMD_FIFO_COUNT_WIDTH){1'b0}}, cmd_fifo_wr_data_count },
     { {(8-WDATA_FIFO_COUNT_WIDTH){1'b0}}, wdata_fifo_wr_data_count },

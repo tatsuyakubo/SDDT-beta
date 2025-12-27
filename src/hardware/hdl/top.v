@@ -43,7 +43,7 @@ module top #(parameter tCK = 1500, SIM = "false")
   wire         axis_rdata_tlast;
   wire         axis_rdata_tvalid;
   wire         axis_rdata_tready;
-  wire [31:0]  gpio2_io_i;
+  wire [31:0]  gpio_io_i;
   wire [31:0]  gpio2_io_o;
 
   // =========================================================================
@@ -69,7 +69,7 @@ module top #(parameter tCK = 1500, SIM = "false")
     .S_AXIS_RDATA_tvalid(axis_rdata_tvalid),
     .S_AXIS_RDATA_tready(axis_rdata_tready),
     // Debug signals
-    .gpio2_io_i(gpio2_io_i),
+    .gpio_io_i(gpio_io_i),
     .gpio2_io_o(gpio2_io_o)
   );
 
@@ -116,7 +116,7 @@ module top #(parameter tCK = 1500, SIM = "false")
     .M_AXIS_RDATA_tready(axis_rdata_tready),
     // Debug signals
     .control(gpio2_io_o),
-    .state(gpio2_io_i)
+    .state(gpio_io_i)
   );
 
   // =========================================================================

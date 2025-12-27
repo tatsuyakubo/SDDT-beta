@@ -33,7 +33,7 @@ module scheduler #(
     input  wire                     rst,
     
     // AXI Stream Slave - DDR4 command input (from host)
-    input  wire [CMD_WIDTH-1:0]   S_AXIS_CMD_TDATA,
+    input  wire [CMD_WIDTH-1:0]     S_AXIS_CMD_TDATA,
     input  wire                     S_AXIS_CMD_TVALID,
     output wire                     S_AXIS_CMD_TREADY,
     input  wire                     S_AXIS_CMD_TLAST,
@@ -45,7 +45,11 @@ module scheduler #(
     
     // Output without backpressure (to decoder)
     output wire [OUTPUT_WIDTH-1:0]  output_data,
-    output wire                     output_valid
+    output wire                     output_valid,
+
+    // Debug interface
+    input  wire [1:0]               debug_index,
+    output wire [31:0]              debug_data
 );
 
     //=========================================================================
@@ -56,7 +60,7 @@ module scheduler #(
     //=========================================================================
     // Internal registers
     //=========================================================================
-    reg [CMD_WIDTH-1:0]   cmd_reg;
+    reg [CMD_WIDTH-1:0]     cmd_reg;
     reg [WDATA_WIDTH-1:0]   wdata_reg;
     reg                     cmd_valid_reg;
     reg                     wdata_valid_reg;
@@ -142,8 +146,21 @@ module scheduler #(
     end
 
     //=========================================================================
-    // Debug: Performance counters (optional, can be removed for synthesis)
+    // Debug
     //=========================================================================
+    // Debug: latest command register
+    reg [CMD_WIDTH-1:0]     latest_cmd_reg;
+    assign debug_data = latest_cmd_reg[debug_index*32 +: 32];
+    always @(posedge clk) begin
+        if (rst) begin
+            latest_cmd_reg <= {CMD_WIDTH{1'b0}};
+        end else begin
+            if (S_AXIS_CMD_TVALID && S_AXIS_CMD_TREADY) begin
+                latest_cmd_reg <= S_AXIS_CMD_TDATA;
+            end
+        end
+    end
+
     `ifdef SIMULATION
     reg [31:0] cmd_count;
     reg [31:0] wdata_count;
